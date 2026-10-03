@@ -1,0 +1,16 @@
+{
+  "name": "mythic-bedrock",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MythicMobs-style boss framework for Minecraft Bedrock (Script API)",
+  "type": "module",
+  "scripts": {
+    "check": "tsc -p tsconfig.json",
+    "validate": "node tools/validate.mjs",
+    "deploy": "node tools/deploy.mjs"
+  },
+  "devDependencies": {
+    "@minecraft/server": "2.10.0",
+    "typescript": "^7.0.2"
+  }
+}

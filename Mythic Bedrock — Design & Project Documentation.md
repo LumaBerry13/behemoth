@@ -83,8 +83,8 @@ The Script API can run all of MythicMobs' logic, but it cannot change an entity 
 | L5 | No API for bone positions. | Converter pre-bakes per-tick bone offsets; runtime rotates by yaw (section 6). | Solved by design, needs calibration |
 | L6 | One collision box per entity; no per-bone hitboxes. | Baked bone spheres: attack overlap checks and raycast-based weak-point detection. | Approximated |
 | L7 | No pathfinding API for arbitrary targets. | Hybrid AI: vanilla navigation for walking/chasing via component groups; scripted movement (impulse, teleport, rotation) for attacks. | Decided \[DECIDED\] |
-| L8 | `entity.target` is read-only; no `setTarget` \[VERIFY\]. | Framework-owned threat table drives scripted skills; vanilla chase filtered via events. | Partial |
-| L9 | Cancelling incoming damage: no stable hurt before-event known \[VERIFY\]. | `damage_sensor` in component groups for immunity; heal-back for damage reduction. | Partial |
+| L8 | No script access to a mob's vanilla target: `Entity` has no `target` / `setTarget` in stable 2.10.0 (verified in typings). | Framework-owned threat table drives scripted skills; vanilla chase filtered via events. | Partial |
+| L9 | Cancelling incoming damage. | Stable `world.beforeEvents.entityHurt` exists in 2.10.0 (`cancel`, writable `damage`) — usable for reduction/immunity; `damage_sensor` groups remain for full invulnerability. | Solved (verify in-game) |
 | L10 | No script boss-bar API; style/colour fixed. | `minecraft:boss` component; update text via `nameTag`. | Accepted |
 | L11 | Only RP-defined or vanilla particles can be spawned. | Shared framework particle library driven by Molang variables (section 4). | Solved by design |
 | L12 | Visual changes (part visibility, texture swap, anim speed) need client Molang. | Entity properties set from script, read by render controllers / `anim_time_update`. Converter patches RP. | Solved by design |
@@ -98,6 +98,7 @@ The Script API can run all of MythicMobs' logic, but it cannot change an entity 
 | L20 | Client/server drift of \~0.1–0.3 blocks on bone positions. | Accept for effects and hit spheres; size spheres generously. | Accepted |
 | L21 | Segmented bodies, bone mounts, real multi-part hitboxes. | Out of scope; redesign such bosses. | Not possible |
 | L22 | UI limited to `@minecraft/server-ui` forms. | Use titles, action bar, boss bar; JSON UI only if ever essential. | Accepted |
+| L23 | `mb:anim_speed` speeds up the client animation, but server-side lengths, markers and baked tracks stay at speed 1. | Do not change anim speed mid-fight until the runtime scales `startTick`/markers by the speed factor. | Open |
 
 ### API notes (all \[VERIFY\] before use)
 
@@ -597,28 +598,28 @@ The first four decisions shape the architecture and must be settled in M0, befor
 
 ### Decisions
 
-- [ ] **D1 Pack layout:** all configs in the framework BP (default), or data-only configs sent via `scriptevent`.
-- [ ] **D2 API version:** which `@minecraft/server` stable version to pin, and the `min_engine_version`.
+- [ ] **D1 Pack layout:** all configs in the framework BP (default), or data-only configs sent via `scriptevent`. *Provisional (2026-10-03): framework BP default used by the M1 code; owner to confirm.*
+- [ ] **D2 API version:** which `@minecraft/server` stable version to pin, and the `min_engine_version`. *Provisional (2026-10-03): `@minecraft/server` 2.10.0 (latest stable on npm), `min_engine_version` 1.26.50 \[VERIFY against the owner's game version\].*
 - [ ] **D3 Execution rules:** confirm or change the defaults in section 7 (concurrency, casting lock, interruption, cancellation).
 - [ ] **D4 Licensing:** check the licence of each purchased MythicMobs / ModelEngine pack. Most allow personal server use but forbid redistribution or porting. Personal conversion ≠ public release.
 - [ ] **D5 Bone tagging:** `mb_` naming convention in Blockbench, or bone list in config.
 - [ ] **D6 Boss family / Peaceful handling.**
 - [ ] **D7 Player-count scaling and drop distribution.**
 - [ ] **D8 CPU budget per boss per tick** (after MVP profiling).
-- [ ] **D9 Language:** plain JS with JSDoc + `.d.ts`, or TypeScript compiled to JS (earlier notes mention TypeScript).
+- [ ] **D9 Language:** plain JS with JSDoc + `.d.ts`, or TypeScript compiled to JS (earlier notes mention TypeScript). *Provisional (2026-10-03): plain JS + JSDoc + `types/config.d.ts`, type-checked with `tsc --checkJs` (`npm run check`); no build step.*
 
 ### To verify against current docs or by test
 
-- [ ] `playAnimation` option names.
-- [ ] Whether `entity.target` is read-only and whether any `setTarget` exists.
-- [ ] Whether a stable before-event for entity hurt exists (damage cancellation).
-- [ ] `applyKnockback` signature in the pinned version.
+- [x] `playAnimation` option names. 2.10.0: `blendOutTime`, `controller`, `nextState`, `players`, `stopExpression`.
+- [x] Whether `entity.target` is read-only and whether any `setTarget` exists. Neither exists on `Entity` in 2.10.0 stable.
+- [x] Whether a stable before-event for entity hurt exists (damage cancellation). Yes: `world.beforeEvents.entityHurt` (`cancel`, `damage`, `damageSource`, `hurtEntity`).
+- [x] `applyKnockback` signature in the pinned version. `applyKnockback(horizontalForce: VectorXZ, verticalStrength: number)`.
 - [ ] Whether `applyDamage` is scaled by difficulty.
 - [ ] Max entity properties per entity type and max enum values.
 - [ ] Max dynamic property size.
 - [ ] Ticking area limit.
-- [ ] Custom command registration API name.
-- [ ] Biome and light-level query APIs.
+- [x] Custom command registration API name. `system.beforeEvents.startup` → `customCommandRegistry.registerCommand(def, cb)` / `registerEnum`.
+- [x] Biome and light-level query APIs. `Dimension.getBiome`, `getLightLevel`, `getSkyLightLevel`.
 - [ ] Persistence component name.
 - [ ] Coordinate conventions: X mirroring, Euler order, `getRotation().y` vs rendered body yaw.
 - [ ] Script profiling support.

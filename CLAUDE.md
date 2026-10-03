@@ -8,7 +8,20 @@ Persistent context for Claude Code sessions. The **single source of truth** is
 
 A JavaScript framework on the Minecraft Bedrock Script API (`@minecraft/server`) that recreates the MythicMobs + ModelEngine boss workflow. One JS config file per boss; mechanics, targeters, conditions and triggers are plug-in modules bound in manager files. Plus an offline **Python converter** that bakes bone tracks / animation data from `.geo.json` + `.animation.json` (+ optional `.bbmodel`).
 
-**Status (2026-10-03):** design complete, no code written. Current milestone: **M0** (see below).
+**Status (2026-10-03):** framework base written (M1 core + an early subset of M2 modules) with a test boss `mb:test_boss` (vanilla zombie model). Not yet tested in-game. Next: in-game test of the base, then the owner introduces a real boss (+ its MythicMobs YAML) and the framework grows alongside it.
+
+## Dev commands
+
+- `npm run check` — type-check all scripts against the pinned `@minecraft/server` typings (`tsc --checkJs`). Catches invented/misspelled API names. Run after every script change.
+- `npm run validate` — run the real Validator over every bound boss config in Node (no game needed). Run after every config/module change.
+- `npm run deploy` — copy `BP/` and `RP/` into `%APPDATA%\Minecraft Bedrock\Users\Shared\games\com.mojang\development_*_packs` (override with `MB_COM_MOJANG`).
+- The typings at `node_modules/@minecraft/server/index.d.ts` are the reference for API names — grep them instead of guessing.
+
+## Provisional decisions in use (owner to confirm; see design doc §15)
+
+- D1: everything script-side in the one framework BP.
+- D2: `@minecraft/server` **2.10.0**, `min_engine_version` [1, 26, 50] [VERIFY vs owner's game version].
+- D9: plain JS + JSDoc + `types/config.d.ts`, checked by `tsc`, no build step.
 
 ## Before writing any code
 
@@ -56,13 +69,27 @@ Skill line keys: `m` mechanic, `o` options, `t` targeter, `tr` trigger(s), `if` 
 
 A module declares `requires: [...]`; missing deps disable that skill with a warning, the rest of the boss still runs.
 
-## Planned layout
+## Layout
 
 ```
 BP/  manifest.json, entities/, scripts/{main.js, adapter/, core/, registry/, modules/, bosses/, generated/, types/, debug/}
-RP/  particles/ (shared, Molang-driven), render_controllers/, entity/, models/, animations/, textures/
-converter/  Python CLI + unit tests
+RP/  entity/, animations/, texts/ (later: particles/ shared library, render_controllers/, models/, textures/)
+tools/  validate.mjs, deploy.mjs (Node)
+converter/  Python CLI + unit tests (M2/M3, not started)
 ```
+
+Key runtime files:
+- `scripts/main.js` — builds the `services` container, binds modules + bosses, validates, starts the scheduler, registers debug commands.
+- `scripts/adapter/Adapter.js` — the only `@minecraft/server` import.
+- `scripts/registry/SkillManager.js` — registries **and** the module binding list (`bindModules`). Add a module = new file + import + bind line.
+- `scripts/bosses/index.js` — boss binding list (`bindBosses`). Add a boss = config file + import + bind line.
+- `scripts/core/` — `BossManager` (events → bus, instances, persistence, drops), `BossInstance` (phase, cooldowns, lock, anim, bone lookup), `SkillExecutor` (runs compiled skills, delays via scheduler), `Validator` (compiles configs at startup), `SkillParser`, `Scheduler` (+`CancelToken`), `EventBus`, `ThreatTable`, `Persistence`, `Random` (seedable), `Logger`, `vec.js`.
+- Modules get everything through `ctx.services` (adapter, scheduler, bus, bosses, executor, random, log). They may import the pure helpers `core/vec.js` and `core/SkillParser.js` (`compare`), nothing else from core.
+- `generated/test_boss/*.js` are hand-written stand-ins in converter output format.
+
+Execution semantics implemented: skill = trigger → skill `if`/`chance`/cooldown → steps in order; a mechanic returning N > 0 pauses the run N ticks; `exclusive` skills take the cast lock and respect GCD; `state{lock:true}` holds the lock until anim end; `interruptible` runs are cancelled on phase change; boss death cancels everything, then `onDeath` skills run for up to 100 ticks.
+
+Debug commands (cheats on): `/mb:spawn <boss>`, `/mb:skill <name>`, `/mb:phase <id>`, `/mb:despawn`, `/mb:debug [on]`, `/mb:bones [on]`, `/mb:seed [n]`.
 
 ## Mythic-ready entity stub (design doc §5)
 
@@ -88,8 +115,8 @@ Every boss entity JSON must contain:
 
 ## Milestones (design doc §14) — next starts only when exit check passes
 
-- **M0 (current):** settle D1–D4; pin API version; check [VERIFY] items affecting stub/core; repo + pack skeletons.
-- **M1:** adapter, scheduler + cancel tokens, event bus, BossManager/SkillManager, BossInstance, persistence, validator, `config.d.ts`, debug commands, log levels.
+- **M0:** settle D1–D4 (D1/D2/D9 provisional, D3 defaults implemented, D4 open); pin API version; check [VERIFY] items affecting stub/core; repo + pack skeletons.
+- **M1 (current — code written, awaiting in-game test):** adapter, scheduler + cancel tokens, event bus, BossManager/SkillManager, BossInstance, persistence, validator, `config.d.ts`, debug commands, log levels.
 - **M2:** stub on one boss; minimal converter (lengths, one baked bone); ~10 MVP modules (state, damage, leap, particle, particleRing, sound, delay, setAI, summon, phase change); bone-marker calibration; first profiling.
 - **M3:** full converter (interpolation modes, Molang, unbakeable detection, markers/hit frames, entity patch, config skeleton, report, pytest).
 - **M4:** remaining v1 modules, bone hit-sphere attacks, reset/leash, threat table, particle library, overlay.
@@ -105,4 +132,4 @@ Don't silently pick an answer for an open decision — ask the owner, then recor
 - Owner: experienced Python full-stack dev; has built Bedrock Script API addons (incl. a scripted boss and a mob-skills system) and Forge/Fabric mods.
 - Troubleshooting is iterative with exact error messages and IDE screenshots.
 - Test environment: Bedrock Dedicated Server + VS Code Minecraft Debugger; `/reload` for iteration.
-- Git: commit meaningful units of work with clear messages. Purchased boss assets (models, textures, MM YAML) must not be committed to a public remote (licensing, D4) — keep them under `private/` (git-ignored).
+- Git: local repo only — do not add a remote or push until the owner asks. Commit meaningful units of work with clear messages. Purchased boss assets (models, textures, MM YAML) must not be committed to a public remote (licensing, D4) — keep them under `private/` (git-ignored).
