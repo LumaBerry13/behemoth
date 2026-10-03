@@ -78,7 +78,14 @@ export interface BossConfig {
   display?: { name?: string; bossBar?: boolean };
   stats?: { health?: number; armor?: number; knockbackResist?: number; scale?: number };
   animations?: Record<string, AnimationData>;
-  ai?: { default?: AiMode; targetRange?: number; leashRange?: number; resetAfterNoPlayers?: number };
+  ai?: {
+    default?: AiMode;
+    targetRange?: number;
+    /** Turn toward the current target every tick (default true). */
+    faceTarget?: boolean;
+    leashRange?: number;
+    resetAfterNoPlayers?: number;
+  };
   threat?: { enabled?: boolean };
   phases?: PhaseDef[];
   skills: Record<string, SkillDef>;

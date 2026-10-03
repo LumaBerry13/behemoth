@@ -324,6 +324,22 @@ export const Adapter = {
   teleport(e, loc, facing) {
     if (e.isValid) e.teleport(loc, facing ? { facingLocation: facing } : undefined);
   },
+  /**
+   * Face a location: yaw turns the body, pitch tilts the head (mobs).
+   * @param {Entity} e @param {Vector3} loc
+   */
+  lookAt(e, loc) {
+    if (!e.isValid) return;
+    try {
+      e.lookAt(loc);
+    } catch {
+      // UnsupportedFunctionalityError for entity types without rotation
+    }
+  },
+  /** @param {Entity} e */
+  getHeadLocation(e) {
+    return e.getHeadLocation();
+  },
   /** @param {Entity} e */
   getYaw(e) {
     return e.isValid ? e.getRotation().y : 0;

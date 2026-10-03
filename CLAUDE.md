@@ -96,7 +96,9 @@ Debug commands (cheats on): `/mb:spawn <boss>`, `/mb:skill <name>`, `/mb:phase <
 Every boss entity JSON must contain:
 - Component groups + events: `mb:idle`/`mb:set_idle`, `mb:chase`/`mb:set_chase`, `mb:frozen`/`mb:set_frozen`, `mb:invulnerable`/`mb:invuln_on`+`mb:invuln_off`, `mb:despawn`/`mb:despawn`.
 - Properties: `mb:phase` (int), `mb:visibility`, `mb:anim_speed` (float), optional `mb:state` (enum). Keep the set small.
-- `minecraft:boss`, health/collision/knockback resistance/scale per config, persistence component [VERIFY].
+- `minecraft:boss`, health/collision/knockback resistance/scale per config, `minecraft:persistent`.
+- Base `minecraft:damage_sensor` with fall immunity (leaps). The `mb:invulnerable` group's sensor replaces it while active.
+- Facing is framework-owned: `BossInstance.faceTarget()` calls `lookAt` on the target every tick (`ai.faceTarget: false` to opt out).
 - RP: render controller reading `mb:` props; `anim_time_update` using speed property.
 
 ## Animation & baking (design doc §6, §9)

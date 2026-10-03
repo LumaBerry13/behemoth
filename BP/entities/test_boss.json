@@ -62,6 +62,9 @@
       "minecraft:navigation.walk": { "can_path_over_water": true, "avoid_damage_blocks": true },
       "minecraft:follow_range": { "value": 48, "max": 48 },
       "minecraft:fire_immune": true,
+      "minecraft:damage_sensor": {
+        "triggers": [ { "cause": "fall", "deals_damage": "no" } ]
+      },
       "minecraft:breathable": { "total_supply": 15, "suffocate_time": 0, "breathes_water": true }
     },
 

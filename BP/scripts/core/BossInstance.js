@@ -128,7 +128,19 @@ export class BossInstance {
     this.age++;
     this.lastLocation = Adapter.location(this.entity.location);
     this.dimensionId = this.entity.dimension.id;
+    this.faceTarget();
     this.services.bus.emit("tick", { boss: this, data: { age: this.age } });
+  }
+
+  /**
+   * Turn body and head toward the current target every tick. Vanilla look
+   * behaviours stop while frozen/casting and the chase AI only turns the body
+   * while walking, so the framework owns facing (config ai.faceTarget, default on).
+   */
+  faceTarget() {
+    if (this.config.ai?.faceTarget === false) return;
+    const t = this.getTarget();
+    if (t) Adapter.lookAt(this.entity, Adapter.getHeadLocation(t));
   }
 
   /** Apply the display name / boss bar text. */
