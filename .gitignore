@@ -1,0 +1,31 @@
+# Purchased / licensed source assets (MythicMobs, ModelEngine packs) — never commit (D4)
+private/
+
+# Node / TypeScript
+node_modules/
+dist/
+*.log
+npm-debug.log*
+
+# Python (converter)
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+
+# Build outputs
+*.mcpack
+*.mcaddon
+build/
+
+# Editor / OS
+.vscode/settings.json
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Claude Code local settings
+.claude/settings.local.json
