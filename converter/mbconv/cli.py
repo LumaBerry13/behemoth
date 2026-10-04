@@ -21,6 +21,7 @@ files and the per-boss mappings:
   "tuning": {            # Bedrock-side adjustments on top of the YAML (all optional)
     "stop_distance": 2.5,                  # ai.stopDistance
     "damage_multiplier": 1.0,              # stats.damageMultiplier
+    "ignore_difficulty": false,            # stats.ignoreDifficulty
     "randomskill_mode": "available",       # mode for every randomSkill line
     "trigger_overrides": { "<metaskill>": "onTimer:10" },   # mob lines calling it
     "extra_lines": { "<metaskill>": [ { "m": "cameraShake", "o": {}, "delay": 20 } ] }
@@ -165,7 +166,8 @@ def convert(job_path: Path, out: Path) -> Path:
         "display": {"name": tb["display"], "bossBar": True},
         "stats": {"health": tb["health"], "scale": 1,
                   **({"movementSpeed": movement_speed(behavior)} if movement_speed(behavior) else {}),
-                  **({"damageMultiplier": tuning["damage_multiplier"]} if "damage_multiplier" in tuning else {})},
+                  **({"damageMultiplier": tuning["damage_multiplier"]} if "damage_multiplier" in tuning else {}),
+                  **({"ignoreDifficulty": True} if tuning.get("ignore_difficulty") else {})},
         "animations": Raw("anims"),
         "restPose": Raw("rest"),
         "baseStates": ctx.base_states,

@@ -143,6 +143,8 @@ export const world = {
       .map((n) => [n, new Signal()])
   ),
   beforeEvents: { entityHurt: new Signal(), entityRemove: new Signal() },
+  difficulty: "Normal",
+  getDifficulty() { return this.difficulty; },
   getDimension: (id) => dims[id.replace("minecraft:", "")],
   getEntity: (id) => Object.values(dims).flatMap((d) => d.entities).find((e) => e.id === id),
   getAllPlayers: () => Object.values(dims).flatMap((d) => d.entities).filter((e) => e instanceof Player),

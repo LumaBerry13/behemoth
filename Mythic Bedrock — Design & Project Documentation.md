@@ -623,7 +623,7 @@ The first four decisions shape the architecture and must be settled in M0, befor
 - [x] Whether `entity.target` is read-only and whether any `setTarget` exists. Neither exists on `Entity` in 2.10.0 stable.
 - [x] Whether a stable before-event for entity hurt exists (damage cancellation). Yes: `world.beforeEvents.entityHurt` (`cancel`, `damage`, `damageSource`, `hurtEntity`).
 - [x] `applyKnockback` signature in the pinned version. `applyKnockback(horizontalForce: VectorXZ, verticalStrength: number)`.
-- [ ] Whether `applyDamage` is scaled by difficulty.
+- [x] Whether `applyDamage` is scaled by difficulty. Yes for players hit by a mob source (`entityAttack` + damagingEntity): measured in-game on Easy, 10 → 6 (x/2+1). Config `stats.ignoreDifficulty` pre-scales to undo it; Hard factor 1.5 still \[VERIFY\].
 - [ ] Max entity properties per entity type and max enum values.
 - [ ] Max dynamic property size.
 - [ ] Ticking area limit.

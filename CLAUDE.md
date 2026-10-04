@@ -130,7 +130,7 @@ Every boss entity JSON must contain:
 - Chase AI = `nearest_attackable_target` + `hurt_by_target` + `melee_attack` (pathfinding) + `minecraft:attack`; the vanilla melee damage is cancelled by the framework unless `ai.vanillaMelee: true` (L27). Never use `move_towards_target` (its `within_radius` keeps the mob AWAY).
 - `minecraft:boss.name` must be set (else the bar shows "Unknown"); the converter uses the MythicMobs Display name.
 - Speed: `setSpeed` multiplies `config.stats.movementSpeed` (converter copies the entity's `minecraft:movement` value). `ai.stopDistance` makes the boss hold position near its target (no pushing into players); multipliers > 1 (lunges) are exempt.
-- `stats.damageMultiplier` scales every `damage` mechanic. With `/mb:debug on`, each hit logs `damage N → player: hp a → b`.
+- Bedrock scales mob damage to players by difficulty (Easy: x/2+1, measured). `stats.ignoreDifficulty` (job tuning `ignore_difficulty`) undoes it. `stats.damageMultiplier` scales every `damage` mechanic. With `/mb:debug on`, each hit logs `damage N → player: hp a → b`.
 - The converter's behavior patch also removes `minecraft:despawn` and `minecraft:equipment`, raises format_version to 1.21.0 and turns boolean `deals_damage` into "yes"/"no". The owner's own groups/events (e.g. the death sequence) are kept.
 
 ## Animation & baking (design doc §6, §9)

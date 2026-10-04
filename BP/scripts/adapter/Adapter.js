@@ -205,6 +205,10 @@ export const Adapter = {
   getAllPlayers() {
     return world.getAllPlayers();
   },
+  /** World difficulty: "Peaceful" | "Easy" | "Normal" | "Hard". */
+  getDifficulty() {
+    return String(world.getDifficulty());
+  },
   /** @param {string} msg */
   broadcast(msg) {
     world.sendMessage(msg);

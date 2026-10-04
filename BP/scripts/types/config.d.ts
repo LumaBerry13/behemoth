@@ -91,6 +91,8 @@ export interface BossConfig {
     movementSpeed?: number;
     /** Multiplies every `damage` mechanic amount (default 1). */
     damageMultiplier?: number;
+    /** Players take the configured damage on Easy/Normal/Hard alike (default false: vanilla difficulty scaling). */
+    ignoreDifficulty?: boolean;
   };
   animations?: Record<string, AnimationData>;
   /** Baked bone/point positions in the model's rest pose (converter output), used when no baked animation plays. */
