@@ -54,6 +54,8 @@ export class BossInstance {
     this.facingLocked = false;
     /** Movement speed multiplier applied to the entity's base movement. */
     this.speedMult = 1;
+    /** True while the boss holds position because its target is within ai.stopDistance. */
+    this.holding = false;
     /** @type {Map<string, Map<string, number>>} hitbox key → entity id → tick it can be hit again */
     this.hitCooldowns = new Map();
     /** @type {Entity | undefined} last entity that damaged the boss */
@@ -137,7 +139,30 @@ export class BossInstance {
     this.lastLocation = Adapter.location(this.entity.location);
     this.dimensionId = this.entity.dimension.id;
     this.faceTarget();
+    this.updateHold();
     this.services.bus.emit("tick", { boss: this, data: { age: this.age } });
+  }
+
+  /**
+   * Stop walking once the target is within ai.stopDistance (vanilla melee
+   * chase would otherwise push into the player); resume past +0.75 blocks.
+   * Skill speed boosts (multiplier > 1, e.g. lunges) are never held back.
+   */
+  updateHold() {
+    const stop = this.config.ai?.stopDistance;
+    if (!stop) return;
+    const t = this.getTarget();
+    let hold = false;
+    if (t && this.speedMult <= 1) {
+      const a = this.location;
+      const b = t.location;
+      const d = Math.hypot(a.x - b.x, a.z - b.z);
+      hold = this.holding ? d <= stop + 0.75 : d <= stop;
+    }
+    if (hold !== this.holding) {
+      this.holding = hold;
+      this.applySpeed();
+    }
   }
 
   /**
@@ -175,7 +200,12 @@ export class BossInstance {
   /** Movement speed as a multiple of the entity's base speed (0 = rooted). @param {number} mult */
   setSpeed(mult) {
     this.speedMult = mult;
-    Adapter.setMovement(this.entity, this.baseSpeed * mult);
+    if (mult > 1) this.holding = false;
+    this.applySpeed();
+  }
+
+  applySpeed() {
+    Adapter.setMovement(this.entity, this.holding ? 0 : this.baseSpeed * this.speedMult);
   }
 
   /**

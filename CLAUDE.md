@@ -113,6 +113,7 @@ MythicMobs → Mythic Bedrock translation rules (converter `mythic.py`):
 - `totem` → `hitbox` (`ti` read as the per-target re-hit interval [VERIFY]); `throw` velocities ÷10 [VERIFY]; `potion level` = amplifier; `lockmodel` → `lockFacing`; `defaultstate` → `baseState`.
 - `model`, `BodyClamp`, `CancelEvent` are skipped. Metaskills not reachable from the mob's skill lines (e.g. another mob's) are not converted.
 - Unsupported items are dropped and listed in `private/build/<boss>.report.md` — read it after every conversion.
+- Job `tuning` = Bedrock-side adjustments NOT in the YAML (all reported): `stop_distance`, `damage_multiplier`, `randomskill_mode` (`available` = only pick skills that can fire now), `trigger_overrides` (`{metaskill: "onTimer:10"}` for the mob lines calling it), `extra_lines` (`{metaskill: [lines]}` prepended; time them with `delay`) — used for the Dark Knight's camera shakes. Put boss feel tweaks here, never in generated files.
 
 Debug commands (cheats on): `/mb:spawn <boss>`, `/mb:skill <name>`, `/mb:phase <id>`, `/mb:despawn`, `/mb:debug [on]`, `/mb:bones [on]`, `/mb:seed [n]`.
 
@@ -128,7 +129,8 @@ Every boss entity JSON must contain:
 - RP: render controller reading `mb:` props; `anim_time_update` using speed property. Converted bosses get `controller.animation.<boss>.mb_base` first in `scripts.animate`.
 - Chase AI = `nearest_attackable_target` + `hurt_by_target` + `melee_attack` (pathfinding) + `minecraft:attack`; the vanilla melee damage is cancelled by the framework unless `ai.vanillaMelee: true` (L27). Never use `move_towards_target` (its `within_radius` keeps the mob AWAY).
 - `minecraft:boss.name` must be set (else the bar shows "Unknown"); the converter uses the MythicMobs Display name.
-- Speed: `setSpeed` multiplies `config.stats.movementSpeed` (converter copies the entity's `minecraft:movement` value).
+- Speed: `setSpeed` multiplies `config.stats.movementSpeed` (converter copies the entity's `minecraft:movement` value). `ai.stopDistance` makes the boss hold position near its target (no pushing into players); multipliers > 1 (lunges) are exempt.
+- `stats.damageMultiplier` scales every `damage` mechanic. With `/mb:debug on`, each hit logs `damage N → player: hp a → b`.
 - The converter's behavior patch also removes `minecraft:despawn` and `minecraft:equipment`, raises format_version to 1.21.0 and turns boolean `deals_damage` into "yes"/"no". The owner's own groups/events (e.g. the death sequence) are kept.
 
 ## Animation & baking (design doc §6, §9)

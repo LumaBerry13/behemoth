@@ -1,6 +1,6 @@
 # Mythic Bedrock — Design & Project Documentation
 
-Oct 4, 2026 · @Nitesh Mali
+Oct 5, 2026 · @Nitesh Mali
 
 ## 1. Summary and how to use this document
 
@@ -103,6 +103,8 @@ The Script API can run all of MythicMobs' logic, but it cannot change an entity 
 | L25 | Bosses with a scripted death (fatal `damage_sensor` → death animation → despawn) never fire `entityDie`. | Converter detects the death event; the framework treats that `dataDrivenEntityTrigger` as death (onDeath skills, drops, AI frozen, `mb:dead` flag so reloads never re-arm it). | Solved by design |
 | L26 | MythicMobs custom sounds need RP `sound_definitions` + sound files that purchased packs ship separately. | Converter `sounds` map; vanilla placeholders until the real sounds are added. | Accepted |
 | L27 | `behavior.move_towards_target`'s `within_radius` is the distance the mob keeps FROM its target (32 = never approaches); there is no damage-free pathfinding chase goal. | Chase group uses `melee_attack` (+ `minecraft:attack`) for pathfinding; the framework cancels that vanilla melee damage in the `entityHurt` before-event (`ai.vanillaMelee: false`, MythicMobs `CancelEvent ~onAttack`). Skill damage is told apart by a flag set inside `applyDamage` \[VERIFY: before-event is synchronous\]. | Solved by design |
+| L29 | No Script API for camera shake. | `cameraShake` mechanic runs `/camerashake add @s <intensity> <seconds> <type>` on each player. | Solved by design |
+| L30 | Vanilla melee chase walks into the target until body contact; MythicMobs' 40-tick attack timer + random picks feel sluggish on Bedrock. | `ai.stopDistance` holds position near the target (skill speed boosts exempt); converter `tuning` (job file) can shorten the attack timer and set `randomSkill{mode=available}`. | Solved by design |
 | L28 | ModelEngine part pivots + offsets don't describe where a weapon actually is (the `edge4` pivot is the hilt). | Converter `blades`: bakes the blade tip; hits use a hilt→tip capsule, summons land at the tip. Verified per attack with `npm run sim:hits`. | Solved by design |
 
 ### API notes (all \[VERIFY\] before use)

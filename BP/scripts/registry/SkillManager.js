@@ -102,6 +102,7 @@ import throwMechanic from "../modules/mechanics/throw.js";
 import shieldBreak from "../modules/mechanics/shield_break.js";
 import potion from "../modules/mechanics/potion.js";
 import propel from "../modules/mechanics/propel.js";
+import cameraShake from "../modules/mechanics/camera_shake.js";
 
 import self from "../modules/targeters/self.js";
 import target from "../modules/targeters/target.js";
@@ -162,6 +163,7 @@ export function bindModules(sm) {
   sm.bind("shieldBreak", shieldBreak);
   sm.bind("potion", potion);
   sm.bind("propel", propel);
+  sm.bind("cameraShake", cameraShake);
 
   sm.bindTargeter("self", self);
   sm.bindTargeter("target", target);

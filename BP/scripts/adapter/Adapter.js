@@ -507,6 +507,20 @@ export const Adapter = {
   title(p, title, subtitle) {
     if (p.isValid) p.onScreenDisplay.setTitle(title, subtitle ? { subtitle, fadeInDuration: 5, stayDuration: 40, fadeOutDuration: 10 } : undefined);
   },
+  /**
+   * Camera shake via the /camerashake command (no Script API equivalent).
+   * Syntax: camerashake add <player> [intensity 0-4] [seconds] [positional|rotational]
+   * @param {Player} p @param {number} intensity @param {number} seconds @param {"positional" | "rotational"} type
+   */
+  cameraShake(p, intensity, seconds, type = "positional") {
+    if (!p.isValid) return;
+    const i = Math.max(0, Math.min(4, intensity)).toFixed(2);
+    try {
+      p.runCommand(`camerashake add @s ${i} ${seconds.toFixed(2)} ${type}`);
+    } catch {
+      /* command unavailable */
+    }
+  },
   /** @param {Player} p @param {string} text */
   actionBar(p, text) {
     if (p.isValid) p.onScreenDisplay.setActionBar(text);

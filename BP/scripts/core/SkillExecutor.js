@@ -93,9 +93,7 @@ export class SkillExecutor {
     };
 
     if (!opts.force) {
-      if ((boss.cooldowns.get(skill.name) ?? 0) > now) return false;
-      // Exclusive skills respect the casting lock and the global cooldown.
-      if (skill.exclusive && (boss.isCastLocked(now) || boss.gcdUntil > now)) return false;
+      if (!this.isReady(boss, skill, now)) return false;
       if (skill.chance < 1 && !Random.chance(skill.chance)) return false;
       if (!this.checkConditions(ctx, skill.conditions)) return false;
     }
@@ -112,6 +110,32 @@ export class SkillExecutor {
     Log.debug(`${boss.config.id} casts "${skill.name}"`);
     this.runSteps(ctx, run, [{ steps: skill.steps, i: 0 }]);
     return true;
+  }
+
+  /**
+   * Cooldown / cast-lock / GCD gate (no randomness, no conditions).
+   * @param {BossInstance} boss @param {CompiledSkill} skill @param {number} now
+   */
+  isReady(boss, skill, now) {
+    if ((boss.cooldowns.get(skill.name) ?? 0) > now) return false;
+    // Exclusive skills respect the casting lock and the global cooldown.
+    return !(skill.exclusive && (boss.isCastLocked(now) || boss.gcdUntil > now));
+  }
+
+  /**
+   * Whether a named skill could start right now: ready and its conditions pass
+   * (`chance` conditions roll here too). Used by randomSkill{mode=available}.
+   * @param {BossInstance} boss @param {string} name @param {Partial<TriggerEvent>} [event] @param {Target[]} [inherited]
+   */
+  canCast(boss, name, event = {}, inherited) {
+    const skill = boss.compiled.skills.get(name);
+    if (!skill || boss.destroyed || !this.isReady(boss, skill, this.services.scheduler.tick)) return false;
+    /** @type {SkillContext} */
+    const ctx = {
+      boss, caster: boss.entity, trigger: event.triggerEntity, targets: [], data: event.data,
+      vars: boss.vars, token: boss.token, services: this.services, inherited,
+    };
+    return this.checkConditions(ctx, skill.conditions);
   }
 
   /**

@@ -91,3 +91,23 @@ def test_blade_totem_becomes_capsule_and_summon_lands_at_tip():
     summon = translate_line(parse_skill_line("sound{s=a} @modelpart{pid=blade;y=-1}"), c, "x")
     assert summon["t"] == "@Bone{bone=blade_tip}"
     assert {"blade", "blade_tip"} <= c.used_bones
+
+
+def test_tuning_overrides_and_extra_lines():
+    from mbconv.cli import apply_tuning
+
+    skills = {
+        "mob_0_onTimer": {"tr": "onTimer:40", "m": "skill", "o": {"skill": "pick"}, "t": "@target"},
+        "pick": {"c": [{"m": "randomSkill", "o": {"skills": ["a"]}}]},
+        "a": {"m": "damage", "o": {"amount": 1}},
+    }
+    notes = []
+    apply_tuning(skills, {
+        "randomskill_mode": "available",
+        "trigger_overrides": {"pick": "onTimer:10"},
+        "extra_lines": {"a": [{"m": "cameraShake", "o": {}}]},
+    }, ctx(), notes)
+    assert skills["mob_0_onTimer"]["tr"] == "onTimer:10"
+    assert skills["pick"]["c"][0]["o"]["mode"] == "available"
+    assert [l["m"] for l in skills["a"]["c"]] == ["cameraShake", "damage"]  # single-line skill became a sequence
+    assert len(notes) == 3

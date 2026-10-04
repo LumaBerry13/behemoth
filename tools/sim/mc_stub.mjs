@@ -111,6 +111,7 @@ export class Player extends Entity {
   getGameMode() { return this.gameMode; }
   sendMessage(m) { note("chat", `${this.name}: ${m}`); }
   startItemCooldown(cat, t) { note("cooldown", `${this.name} ${cat} ${t}t`); }
+  runCommand(cmd) { note("command", `${this.name}: ${cmd}`); return { successCount: 1 }; }
 }
 
 class Dimension {

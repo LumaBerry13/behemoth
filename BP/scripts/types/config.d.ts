@@ -89,6 +89,8 @@ export interface BossConfig {
     scale?: number;
     /** minecraft:movement value from the entity JSON; setSpeed multiplies this. */
     movementSpeed?: number;
+    /** Multiplies every `damage` mechanic amount (default 1). */
+    damageMultiplier?: number;
   };
   animations?: Record<string, AnimationData>;
   /** Baked bone/point positions in the model's rest pose (converter output), used when no baked animation plays. */
@@ -100,6 +102,8 @@ export interface BossConfig {
     faceTarget?: boolean;
     /** Let the vanilla melee_attack behaviour deal damage (default false: chase only). */
     vanillaMelee?: boolean;
+    /** Stop walking when the target is within this many blocks (horizontal). Off when unset. */
+    stopDistance?: number;
     leashRange?: number;
     resetAfterNoPlayers?: number;
   };

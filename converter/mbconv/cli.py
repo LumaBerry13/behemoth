@@ -17,7 +17,15 @@ files and the per-boss mappings:
   "mob_types": { "<mm mob>": { "type": "minecraft:pig", "lifetime": 100 } },
   "sounds": { "<mm sound>": "<bedrock sound event>" },
   "bone_aliases": { "<modelengine part>": "<bedrock bone>" },
-  "blades": ["<bone>"]   # weapon bones: hits use a hilt->tip capsule, summons land at the tip
+  "blades": ["<bone>"],  # weapon bones: hits use a hilt->tip capsule, summons land at the tip
+  "tuning": {            # Bedrock-side adjustments on top of the YAML (all optional)
+    "stop_distance": 2.5,                  # ai.stopDistance
+    "damage_multiplier": 1.0,              # stats.damageMultiplier
+    "randomskill_mode": "available",       # mode for every randomSkill line
+    "trigger_overrides": { "<metaskill>": "onTimer:10" },   # mob lines calling it
+    "extra_lines": { "<metaskill>": [ { "m": "cameraShake", "o": {}, "delay": 20 } ] }
+                                           # added at the START of that skill; time them with `delay`
+  }
 }
 
 Paths are relative to the job file. Output goes to --out (default private/build)
@@ -101,6 +109,8 @@ def convert(job_path: Path, out: Path) -> Path:
     ctx.base_states["walk"].append("walk") if "walk" in action_anims else None
     tb = translate_boss(job["mob"], mobs[job["mob"]], skills, ctx)
     notes += ctx.notes
+    tuning = job.get("tuning", {})
+    apply_tuning(tb["skills"], tuning, ctx, notes)
     for mm, be in job.get("sounds", {}).items():
         notes.append(f"sound '{mm}' → '{be}' (placeholder until the boss's own sounds are added)")
 
@@ -154,11 +164,13 @@ def convert(job_path: Path, out: Path) -> Path:
         "id": entity_id,
         "display": {"name": tb["display"], "bossBar": True},
         "stats": {"health": tb["health"], "scale": 1,
-                  **({"movementSpeed": movement_speed(behavior)} if movement_speed(behavior) else {})},
+                  **({"movementSpeed": movement_speed(behavior)} if movement_speed(behavior) else {}),
+                  **({"damageMultiplier": tuning["damage_multiplier"]} if "damage_multiplier" in tuning else {})},
         "animations": Raw("anims"),
         "restPose": Raw("rest"),
         "baseStates": ctx.base_states,
-        "ai": {"default": "chase", "targetRange": tb["targetRange"], "vanillaMelee": False},
+        "ai": {"default": "chase", "targetRange": tb["targetRange"], "vanillaMelee": False,
+               **({"stopDistance": tuning["stop_distance"]} if "stop_distance" in tuning else {})},
         "threat": {"enabled": tb["threat"]},
         **({"death": {"event": death_event}} if death_event else {}),
         **({"damageModifiers": tb["damageModifiers"]} if tb["damageModifiers"] else {}),
@@ -212,6 +224,34 @@ def convert(job_path: Path, out: Path) -> Path:
     ]
     _write(report, "\n".join(lines))
     return report
+
+
+def apply_tuning(skills: dict, tuning: dict, ctx: Context, notes: list[str]) -> None:
+    """Job-file adjustments that are not in the MythicMobs YAML (reported, never silent)."""
+    mode = tuning.get("randomskill_mode")
+    for name, sk in skills.items():
+        for line in [sk] + list(sk.get("c", [])):
+            if mode and line.get("m") == "randomSkill":
+                line["o"]["mode"] = mode
+                notes.append(f"tuning: {name} randomSkill mode={mode}")
+    for target, tr in tuning.get("trigger_overrides", {}).items():
+        hit = [k for k, sk in skills.items() if k.startswith("mob_") and sk.get("o", {}).get("skill") == target]
+        for k in hit:
+            notes.append(f"tuning: {k} trigger {skills[k]['tr']} -> {tr}")
+            skills[k]["tr"] = tr
+        if not hit:
+            notes.append(f"tuning: trigger override for '{target}' matched no mob skill line")
+    for target, lines in tuning.get("extra_lines", {}).items():
+        if target not in skills:
+            notes.append(f"tuning: extra lines for unknown skill '{target}' ignored")
+            continue
+        sk = skills[target]
+        if "c" not in sk:
+            sk["c"] = [{k: sk.pop(k) for k in ("m", "o", "t", "delay") if k in sk}]
+        sk["c"] = list(lines) + sk["c"]
+        for line in lines:
+            ctx.used_mechanics.add(line["m"])
+        notes.append(f"tuning: {len(lines)} extra line(s) added to {target}: {', '.join(l['m'] for l in lines)}")
 
 
 def _mk(p: Path) -> Path:
