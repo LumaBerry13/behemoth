@@ -134,4 +134,4 @@ Don't silently pick an answer for an open decision — ask the owner, then recor
 - Owner: experienced Python full-stack dev; has built Bedrock Script API addons (incl. a scripted boss and a mob-skills system) and Forge/Fabric mods.
 - Troubleshooting is iterative with exact error messages and IDE screenshots.
 - Test environment: Bedrock Dedicated Server + VS Code Minecraft Debugger; `/reload` for iteration.
-- Git: local repo only — do not add a remote or push until the owner asks. Commit meaningful units of work with clear messages. Purchased boss assets (models, textures, MM YAML) must not be committed to a public remote (licensing, D4) — keep them under `private/` (git-ignored).
+- Git: the repo is **public** on GitHub (`origin`, branch `main`). Commit meaningful units of work with clear messages. Purchased boss assets (models, textures, MM YAML) must never be committed (licensing, D4) — keep them under `private/` (git-ignored) and check `git status` before every push.
