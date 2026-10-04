@@ -24,6 +24,7 @@ files and the per-boss mappings:
     "ignore_difficulty": false,            # stats.ignoreDifficulty
     "randomskill_mode": "available",       # mode for every randomSkill line
     "trigger_overrides": { "<metaskill>": "onTimer:10" },   # mob lines calling it
+    "extra_lines_enabled": true,           # false keeps extra_lines in the job but doesn't apply them
     "extra_lines": { "<metaskill>": [ { "m": "cameraShake", "o": {}, "delay": 20 } ] }
                                            # added at the START of that skill; time them with `delay`
   }
@@ -243,6 +244,10 @@ def apply_tuning(skills: dict, tuning: dict, ctx: Context, notes: list[str]) -> 
             skills[k]["tr"] = tr
         if not hit:
             notes.append(f"tuning: trigger override for '{target}' matched no mob skill line")
+    if tuning.get("extra_lines_enabled", True) is False:
+        if tuning.get("extra_lines"):
+            notes.append(f"tuning: extra_lines disabled (extra_lines_enabled=false); {len(tuning['extra_lines'])} skill(s) left unchanged")
+        return
     for target, lines in tuning.get("extra_lines", {}).items():
         if target not in skills:
             notes.append(f"tuning: extra lines for unknown skill '{target}' ignored")

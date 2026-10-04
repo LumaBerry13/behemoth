@@ -111,3 +111,13 @@ def test_tuning_overrides_and_extra_lines():
     assert skills["pick"]["c"][0]["o"]["mode"] == "available"
     assert [l["m"] for l in skills["a"]["c"]] == ["cameraShake", "damage"]  # single-line skill became a sequence
     assert len(notes) == 3
+
+
+def test_extra_lines_can_be_disabled():
+    from mbconv.cli import apply_tuning
+
+    skills = {"a": {"m": "damage", "o": {"amount": 1}}}
+    notes = []
+    apply_tuning(skills, {"extra_lines_enabled": False, "extra_lines": {"a": [{"m": "cameraShake", "o": {}}]}}, ctx(), notes)
+    assert skills["a"] == {"m": "damage", "o": {"amount": 1}}
+    assert "disabled" in notes[0]

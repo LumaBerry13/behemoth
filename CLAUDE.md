@@ -113,7 +113,7 @@ MythicMobs → Mythic Bedrock translation rules (converter `mythic.py`):
 - `totem` → `hitbox` (`ti` read as the per-target re-hit interval [VERIFY]); `throw` velocities ÷10 [VERIFY]; `potion level` = amplifier; `lockmodel` → `lockFacing`; `defaultstate` → `baseState`.
 - `model`, `BodyClamp`, `CancelEvent` are skipped. Metaskills not reachable from the mob's skill lines (e.g. another mob's) are not converted.
 - Unsupported items are dropped and listed in `private/build/<boss>.report.md` — read it after every conversion.
-- Job `tuning` = Bedrock-side adjustments NOT in the YAML (all reported): `stop_distance`, `damage_multiplier`, `randomskill_mode` (`available` = only pick skills that can fire now), `trigger_overrides` (`{metaskill: "onTimer:10"}` for the mob lines calling it), `extra_lines` (`{metaskill: [lines]}` prepended; time them with `delay`) — used for the Dark Knight's camera shakes. Put boss feel tweaks here, never in generated files.
+- Job `tuning` = Bedrock-side adjustments NOT in the YAML (all reported): `stop_distance`, `damage_multiplier`, `randomskill_mode` (`available` = only pick skills that can fire now), `trigger_overrides` (`{metaskill: "onTimer:10"}` for the mob lines calling it), `extra_lines` (`{metaskill: [lines]}` prepended; time them with `delay`), `extra_lines_enabled` (false = keep them in the job but do not apply). The Dark Knight's camera shakes are defined there and currently DISABLED at the owner's request (2026-10-05). Put boss feel tweaks here, never in generated files.
 
 Debug commands (cheats on): `/mb:spawn <boss>`, `/mb:skill <name>`, `/mb:phase <id>`, `/mb:despawn`, `/mb:debug [on]`, `/mb:bones [on]`, `/mb:seed [n]`.
 
