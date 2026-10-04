@@ -1,0 +1,27 @@
+{
+  "format_version": "1.10.0",
+  "minecraft:client_entity": {
+    "description": {
+      "identifier": "test:kitchen",
+      "materials": {
+        "default": "entity_alphatest"
+      },
+      "textures": {
+        "default": "textures/entity/kitchen"
+      },
+      "geometry": {
+        "default": "geometry.kitchen"
+      },
+      "animations": {
+        "idle": "animation.kitchen.idle",
+        "walk": "animation.kitchen.walk"
+      },
+      "scripts": {
+        "animate": []
+      },
+      "render_controllers": [
+        "controller.render.default"
+      ]
+    }
+  }
+}

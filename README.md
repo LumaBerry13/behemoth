@@ -4,7 +4,7 @@ A boss framework for **Minecraft Bedrock Edition**, built on the Script API (`@m
 
 A boss is one JavaScript config file. Mechanics, targeters, conditions and triggers are plug-in modules, so new behaviour is added as a new module, not by changing the core.
 
-> **Status:** early development (milestone M2). The core runtime works in-game with a test boss. The Python converter turns a MythicMobs + ModelEngine boss into a Mythic Bedrock boss; the first real boss is converted and in testing.
+> **Status:** early development (milestone M4). The first real MythicMobs + ModelEngine boss has been converted and tested in-game. The framework has 47 mechanics, 14 targeters, 13 conditions and 11 triggers.
 
 ## Features
 
@@ -22,10 +22,12 @@ A boss is one JavaScript config file. Mechanics, targeters, conditions and trigg
 
 | Kind | Modules |
 | --- | --- |
-| Mechanics | `state`, `damage`, `leap`, `particle`, `particleRing`, `sound`, `delay`, `setAI`, `summon`, `phase`, `message`, `waitMarker`, `skill`, `randomSkill`, `invulnerable`, `gcd`, `setSpeed`, `baseState`, `lockFacing`, `addTag`, `removeTag`, `aura`, `hitbox`, `throw`, `shieldBreak`, `potion`, `propel` |
-| Targeters | `@self`, `@target`, `@trigger`, `@PlayersInRadius`, `@EntitiesInRadius`, `@NearestPlayer`, `@SelfLocation`, `@TargetLocation`, `@Bone`, `@Forward` |
-| Conditions | `healthPct`, `distance`, `chance`, `phase`, `hasTarget`, `hasTag`, `offGcd`, `moving`, `inBlock` (any can be negated with `!`) |
-| Triggers | `onSpawn`, `onTimer:N`, `onDamaged`, `onDeath`, `onAttack`, `onPhase:N`, `animEnd`, `onMarker:name` |
+| Mechanics | **Combat:** `damage`, `percentDamage`, `heal`, `potion`, `ignite`, `lightning`, `throw`, `knockback`, `pull`, `shieldBreak`, `invulnerable`, `hitbox`, `projectile` · **Movement:** `leap`, `lunge`, `propel`, `velocity`, `teleport`, `teleportBehind`, `setSpeed`, `setAI`, `lockFacing` · **Visual/audio:** `state`, `baseState`, `particle`, `particleRing`, `particleSphere`, `particleLine`, `sound`, `cameraShake`, `setProperty`, `message`, `title`, `actionBar` · **World:** `summon`, `tempBlocks` · **Flow:** `delay`, `waitMarker`, `skill`, `randomSkill`, `aura`, `gcd`, `phase`, `setVariable`, `signal`, `addTag`, `removeTag` |
+| Targeters | `@self`, `@target`, `@trigger`, `@PlayersInRadius`, `@EntitiesInRadius`, `@NearestPlayer`, `@RandomPlayer`, `@ThreatTable`, `@Cone`, `@Ring`, `@SelfLocation`, `@TargetLocation`, `@Bone`, `@Forward` |
+| Conditions | `healthPct`, `distance`, `chance`, `phase`, `hasTarget`, `hasTag`, `offGcd`, `moving`, `inBlock`, `lineOfSight`, `height`, `playersNearby`, `variable` (any can be negated with `!`) |
+| Triggers | `onSpawn`, `onTimer:N`, `onDamaged`, `onDeath`, `onAttack`, `onInteract`, `onPhase:N`, `onSignal:name`, `onReset`, `animEnd`, `onMarker:name` |
+
+The test boss has a `demo_*` skill for each module. Try them in-game with `/mb:skill demo_projectile`, `/mb:skill demo_blocks`, and so on.
 
 ## Requirements
 
@@ -58,6 +60,8 @@ Then:
 | `/mb:skill <name>` | Force a skill on the nearest boss, ignoring cooldowns and conditions |
 | `/mb:phase <id>` | Force a phase on the nearest boss |
 | `/mb:despawn` | Remove the nearest boss without drops or death skills |
+| `/mb:reset` | Reset the nearest boss: full health, phase 1, back to its spawn point |
+| `/mb:perf` | Framework cost per tick, averaged over the last 200 ticks |
 | `/mb:debug [on]` | Toggle debug logs and the action-bar overlay |
 | `/mb:bones [on]` | Toggle particle markers on baked bones (for calibration) |
 | `/mb:seed [n]` | Seed the RNG so a fight can be replayed; omit `n` to unseed |
@@ -68,6 +72,7 @@ Then:
 | --- | --- |
 | `npm run check` | Type-checks every script against the pinned `@minecraft/server` typings. Catches misspelled or non-existent API names. |
 | `npm run validate` | Runs the framework's real config validator in Node, without the game. |
+| `npm run sim:scenarios -- [boss id]` | Regression scenarios: no friendly fire, death and reload handling, reset/leash, and every module showcase skill. |
 | `npm run sim -- <boss id> [ticks] [--hit N] [--debug]` | Runs the real framework headless against a stub of the Script API and prints what each skill did. Catches runtime errors before an in-game test. |
 | `npm run convert -- --job <job.json>` | Converts a MythicMobs + ModelEngine boss (see below). |
 | `npm run test:converter` | Runs the converter's Python unit tests. |
@@ -191,9 +196,9 @@ private/                git-ignored: licensed boss sources and converter output
 | Milestone | Scope |
 | --- | --- |
 | M1 (done) | Core runtime, validator, persistence, debug tools |
-| M2 (current) | First real boss, converter, bone-position calibration |
+| M2 (done) | First real boss, converter, bone-position calibration |
 | M3 | Full Python converter: bakes bone tracks, extracts markers, generates the entity patch and a config skeleton |
-| M4 | Remaining v1 modules, bone hit-spheres, reset and leash logic, shared particle library |
+| M4 (current) | Remaining v1 modules (done), reset and leash (done), shared particle library |
 | M5 | 2–3 purchased bosses converted end to end, then tag v1 |
 
 The full design, platform limits and open decisions are in [`Mythic Bedrock — Design & Project Documentation.md`](Mythic%20Bedrock%20—%20Design%20&%20Project%20Documentation.md).

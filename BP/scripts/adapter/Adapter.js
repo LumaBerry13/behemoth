@@ -295,6 +295,59 @@ export const Adapter = {
     }
   },
 
+  /** world.gameRules.mobGriefing (block-changing skills respect it). */
+  mobGriefing() {
+    return world.gameRules.mobGriefing;
+  },
+
+  /**
+   * True if no solid block lies on the straight line between two points.
+   * @param {Dimension} dim @param {Vector3} from @param {Vector3} to
+   */
+  lineOfSight(dim, from, to) {
+    const d = { x: to.x - from.x, y: to.y - from.y, z: to.z - from.z };
+    const len = Math.hypot(d.x, d.y, d.z);
+    if (len < 0.01) return true;
+    try {
+      const hit = dim.getBlockFromRay(from, { x: d.x / len, y: d.y / len, z: d.z / len }, {
+        maxDistance: len,
+        includeLiquidBlocks: false,
+        includePassableBlocks: false,
+      });
+      return !hit;
+    } catch {
+      return true; // unloaded: don't block skills on it
+    }
+  },
+
+  /**
+   * Place `typeId` at `loc` only if the block there is air. Returns true if placed.
+   * @param {Dimension} dim @param {Vector3} loc @param {string} typeId
+   */
+  placeIfAir(dim, loc, typeId) {
+    try {
+      const b = dim.getBlock(loc);
+      if (!b || !b.isAir) return false;
+      b.setType(typeId);
+      return true;
+    } catch {
+      return false;
+    }
+  },
+
+  /**
+   * Restore a temporary block to air if it is still `typeId`.
+   * @param {Dimension} dim @param {Vector3} loc @param {string} typeId
+   */
+  clearIfType(dim, loc, typeId) {
+    try {
+      const b = dim.getBlock(loc);
+      if (b && b.typeId === typeId) b.setType("minecraft:air");
+    } catch {
+      /* unloaded: retried by the caller */
+    }
+  },
+
   /** Block type id at a location, or "" if unloaded. @param {Dimension} dim @param {Vector3} loc */
   getBlockTypeId(dim, loc) {
     try {
@@ -475,6 +528,10 @@ export const Adapter = {
   setNameTag(e, name) {
     if (e.isValid && e.nameTag !== name) e.nameTag = name;
   },
+  /** @param {Entity} e @param {number} seconds */
+  ignite(e, seconds) {
+    if (e.isValid) e.setOnFire(seconds, true);
+  },
   /** @param {Entity} e @param {string} tag */
   addTag(e, tag) {
     if (e.isValid) e.addTag(tag);
@@ -507,9 +564,26 @@ export const Adapter = {
   message(p, msg) {
     if (p.isValid) p.sendMessage(msg);
   },
-  /** @param {Player} p @param {string} title @param {string} [subtitle] */
-  title(p, title, subtitle) {
-    if (p.isValid) p.onScreenDisplay.setTitle(title, subtitle ? { subtitle, fadeInDuration: 5, stayDuration: 40, fadeOutDuration: 10 } : undefined);
+  /**
+   * @param {Player} p @param {string} title @param {string} [subtitle]
+   * @param {{ fadeIn?: number, stay?: number, fadeOut?: number }} [t] ticks
+   */
+  title(p, title, subtitle, t = {}) {
+    if (!p.isValid) return;
+    p.onScreenDisplay.setTitle(title, {
+      subtitle,
+      fadeInDuration: t.fadeIn ?? 5,
+      stayDuration: t.stay ?? 40,
+      fadeOutDuration: t.fadeOut ?? 10,
+    });
+  },
+  /** World-level dynamic property (framework bookkeeping). @param {string} key */
+  getWorldDynamic(key) {
+    return world.getDynamicProperty(key);
+  },
+  /** @param {string} key @param {string | number | boolean | undefined} value */
+  setWorldDynamic(key, value) {
+    world.setDynamicProperty(key, value);
   },
   /**
    * Camera shake via the /camerashake command (no Script API equivalent).

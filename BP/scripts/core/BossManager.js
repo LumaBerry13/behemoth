@@ -25,6 +25,12 @@ export class BossManager {
     this.instances = new Map();
     /** @type {Map<string, number>} summoned entity id → framework tick to remove it */
     this.temporaries = new Map();
+    /**
+     * Temporary blocks placed by skills, restored to air when due. Persisted in a
+     * world dynamic property so a reload never leaves them behind.
+     * @type {{ dim: string, x: number, y: number, z: number, type: string, until: number }[]}
+     */
+    this.tempBlocks = [];
   }
 
   /** Called from bosses/index.js, one line per boss. @param {import("../types/config").BossConfig} config */
@@ -44,7 +50,10 @@ export class BossManager {
     this.subscribe();
     this.services.scheduler.onTick((tick) => this.tickAll(tick));
     // Bosses already loaded when scripts (re)load never fire entityLoad.
-    this.services.scheduler.after(1, () => this.scanLoaded());
+    this.services.scheduler.after(1, () => {
+      this.restoreSavedBlocks();
+      this.scanLoaded();
+    });
   }
 
   /** @private */
@@ -176,7 +185,10 @@ export class BossManager {
 
   /** @private @param {number} tick */
   tickAll(tick) {
-    if (tick % 10 === 0) this.sweepTemporaries(tick);
+    if (tick % 10 === 0) {
+      this.sweepTemporaries(tick);
+      this.sweepBlocks(tick);
+    }
     for (const [id, boss] of this.instances) {
       if (!boss.entity.isValid) {
         // Unloaded (chunk) or removed: drop the in-memory instance. It is
@@ -246,6 +258,69 @@ export class BossManager {
       const e = Adapter.getEntity(id);
       if (e) Adapter.remove(e);
     }
+  }
+
+  /**
+   * Place temporary blocks (air only) that turn back to air after `ticks`.
+   * Respects the mobGriefing game rule unless `force`.
+   * @param {import("@minecraft/server").Dimension} dim
+   * @param {import("@minecraft/server").Vector3[]} locs @param {string} type @param {number} ticks @param {boolean} [force]
+   * @returns {number} blocks placed
+   */
+  placeTempBlocks(dim, locs, type, ticks, force = false) {
+    if (!force && !Adapter.mobGriefing()) return 0;
+    const until = this.services.scheduler.tick + ticks;
+    let n = 0;
+    for (const l of locs) {
+      const p = { x: Math.floor(l.x), y: Math.floor(l.y), z: Math.floor(l.z) };
+      if (!Adapter.placeIfAir(dim, p, type)) continue;
+      this.tempBlocks.push({ dim: dim.id, ...p, type, until });
+      n++;
+    }
+    if (n) this.saveBlocks();
+    return n;
+  }
+
+  /** @private @param {number} tick */
+  sweepBlocks(tick) {
+    if (!this.tempBlocks.length) return;
+    const keep = [];
+    for (const b of this.tempBlocks) {
+      if (b.until > tick) keep.push(b);
+      else Adapter.clearIfType(Adapter.getDimension(b.dim), b, b.type);
+    }
+    if (keep.length !== this.tempBlocks.length) {
+      this.tempBlocks = keep;
+      this.saveBlocks();
+    }
+  }
+
+  /** @private */
+  saveBlocks() {
+    // Ticks are relative to this session's scheduler, so persist remaining ticks.
+    const now = this.services.scheduler.tick;
+    const data = this.tempBlocks.map((b) => ({ ...b, until: b.until - now }));
+    Adapter.setWorldDynamic("mb:tempblocks", data.length ? JSON.stringify(data) : undefined);
+  }
+
+  /** @private Restore blocks left by a previous session (reload / crash). */
+  restoreSavedBlocks() {
+    const raw = Adapter.getWorldDynamic("mb:tempblocks");
+    if (typeof raw !== "string") return;
+    try {
+      for (const b of JSON.parse(raw)) Adapter.clearIfType(Adapter.getDimension(b.dim), b, b.type);
+    } catch {
+      /* corrupt: drop it */
+    }
+    Adapter.setWorldDynamic("mb:tempblocks", undefined);
+  }
+
+  /**
+   * Send a framework signal to bosses (onSignal trigger).
+   * @param {BossInstance[]} bosses @param {string} signal @param {import("@minecraft/server").Entity | undefined} from
+   */
+  signal(bosses, signal, from) {
+    for (const boss of bosses) this.services.bus.emit("signal", { boss, triggerEntity: from, data: { signal } });
   }
 
   /** Remove a boss without drops or death skills. @param {BossInstance} boss */

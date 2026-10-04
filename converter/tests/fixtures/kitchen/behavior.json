@@ -1,0 +1,27 @@
+{
+  "format_version": "1.16.0",
+  "minecraft:entity": {
+    "description": {
+      "identifier": "test:kitchen",
+      "is_spawnable": true,
+      "is_summonable": true
+    },
+    "components": {
+      "minecraft:health": {
+        "value": 150,
+        "max": 150
+      },
+      "minecraft:movement": {
+        "value": 0.25
+      },
+      "minecraft:physics": {},
+      "minecraft:navigation.walk": {},
+      "minecraft:movement.basic": {},
+      "minecraft:collision_box": {
+        "width": 0.8,
+        "height": 2
+      }
+    },
+    "events": {}
+  }
+}

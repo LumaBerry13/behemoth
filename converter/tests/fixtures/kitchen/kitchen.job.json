@@ -1,0 +1,21 @@
+{
+  "boss": "kitchen",
+  "mob": "kitchen_boss",
+  "mobs_yaml": [
+    "mobs.yml"
+  ],
+  "skills_yaml": [
+    "skills.yml"
+  ],
+  "behavior": "behavior.json",
+  "client_entity": "entity.json",
+  "geometry": "geo.json",
+  "animations": [
+    "animation.json"
+  ],
+  "animation_controllers": [],
+  "textures": {},
+  "tuning": {
+    "randomskill_mode": "available"
+  }
+}

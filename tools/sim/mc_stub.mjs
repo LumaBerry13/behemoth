@@ -73,8 +73,9 @@ export class Entity {
   clearVelocity() { this.velocity = { x: 0, y: 0, z: 0 }; }
   applyImpulse(v) { note("impulse", `${this.typeId} ${fmt(v)}`); }
   applyKnockback(h, vy) { note("knockback", `${this.typeId} ${fmt({ x: h.x, y: vy, z: h.z })}`); }
+  setOnFire(sec) { note("fire", `${this.typeId} ${sec}s`); return true; }
   addEffect(eff, ticks, o) { note("effect", `${this.typeId} ${eff} ${ticks}t amp${o?.amplifier ?? 0}`); }
-  teleport(loc) { this.location = { ...loc }; }
+  teleport(loc) { note("teleport", `${this.typeId} → ${fmt(loc)}`); this.location = { ...loc }; }
   applyDamage(amount, opts) {
     if (!this.isValid || !this.living) return false;
     const before = world.beforeEvents.entityHurt.fire({
@@ -106,7 +107,10 @@ export class Player extends Entity {
     super("minecraft:player", dimension, location, { health: 20 });
     this.name = name;
     this.gameMode = GameMode.Survival;
-    this.onScreenDisplay = { setActionBar() {}, setTitle() {} };
+    this.onScreenDisplay = {
+      setActionBar: (t) => note("actionbar", `${name}: ${t}`),
+      setTitle: (t) => note("title", `${name}: ${t}`),
+    };
   }
   getGameMode() { return this.gameMode; }
   sendMessage(m) { note("chat", `${this.name}: ${m}`); }
@@ -115,7 +119,7 @@ export class Player extends Entity {
 }
 
 class Dimension {
-  constructor(id) { this.id = id; this.entities = []; }
+  constructor(id) { this.id = id; this.entities = []; this.blocks = new Map(); }
   getEntities(q = {}) {
     return this.entities.filter((e) => {
       if (!e.isValid) return false;
@@ -127,11 +131,21 @@ class Dimension {
     });
   }
   getPlayers(q = {}) { return this.getEntities(q).filter((e) => e instanceof Player); }
-  spawnEntity(typeId, loc) { note("spawn", `${typeId} @ ${fmt(loc)}`); const e = new Entity(typeId, this, loc); world.afterEvents.entitySpawn.fire({ entity: e, cause: "Spawned" }); return e; }
+  spawnEntity(typeId, loc) {
+    if (typeId === "minecraft:lightning_bolt") { note("lightning", fmt(loc)); return new Entity(typeId, this, loc, { living: false }); } note("spawn", `${typeId} @ ${fmt(loc)}`); const e = new Entity(typeId, this, loc); world.afterEvents.entitySpawn.fire({ entity: e, cause: "Spawned" }); return e; }
   spawnItem(item, loc) { note("drop", `${item.typeId} x${item.amount}`); }
   spawnParticle(name, loc) { note("particle", `${name} @ ${fmt(loc)}`); }
   playSound(id, loc, o) { note("sound", `${id} v${o?.volume} p${o?.pitch}`); }
-  getBlock() { return { typeId: "minecraft:air" }; }
+  getBlock(loc) {
+    const key = `${Math.floor(loc.x)},${Math.floor(loc.y)},${Math.floor(loc.z)}`;
+    const dim = this;
+    const typeId = dim.blocks.get(key) ?? (Math.floor(loc.y) < 64 ? "minecraft:grass_block" : "minecraft:air");
+    return {
+      typeId, isAir: typeId === "minecraft:air", location: { x: Math.floor(loc.x), y: Math.floor(loc.y), z: Math.floor(loc.z) },
+      setType(t) { note("block", `${key} ${typeId} → ${t}`); dim.blocks.set(key, t); },
+    };
+  }
+  getBlockFromRay() { return undefined; }
   getBlockBelow(loc) { return { location: { x: Math.floor(loc.x), y: 63, z: Math.floor(loc.z) } }; }
 }
 
@@ -144,6 +158,10 @@ export const world = {
   ),
   beforeEvents: { entityHurt: new Signal(), entityRemove: new Signal() },
   difficulty: "Normal",
+  gameRules: { mobGriefing: true },
+  dyn: {},
+  getDynamicProperty(k) { return this.dyn[k]; },
+  setDynamicProperty(k, v) { if (v === undefined) delete this.dyn[k]; else this.dyn[k] = v; },
   getDifficulty() { return this.difficulty; },
   getDimension: (id) => dims[id.replace("minecraft:", "")],
   getEntity: (id) => Object.values(dims).flatMap((d) => d.entities).find((e) => e.id === id),

@@ -4,7 +4,7 @@ Oct 5, 2026 · @Nitesh Mali
 
 ## 1. Summary and how to use this document
 
-Mythic Bedrock is a JavaScript framework, built on the Minecraft Bedrock Script API, that recreates the MythicMobs + ModelEngine boss workflow on Bedrock. A boss is defined by one JS config file; skills, triggers, targeters and conditions are plug-in modules registered in manager files. Status (Oct 4, 2026): M1 core runtime done and tested in-game with a test boss; first real boss (Dark Knight) converted with the M2 converter and awaiting in-game test.
+Mythic Bedrock is a JavaScript framework, built on the Minecraft Bedrock Script API, that recreates the MythicMobs + ModelEngine boss workflow on Bedrock. A boss is defined by one JS config file; skills, triggers, targeters and conditions are plug-in modules registered in manager files. Status (Oct 5, 2026): M1 and M2 done (Dark Knight converted and tested in-game, including reload). M3 converter largely done. M4 in progress: reset/leash, profiler and the §13 module list implemented; shared particle library and timeline markers outstanding.
 
 This document is the single source of truth for the project. It is written so that a human or an AI assistant (Claude chat or Claude Code) with no prior context can understand the design and continue the work.
 
@@ -105,6 +105,8 @@ The Script API can run all of MythicMobs' logic, but it cannot change an entity 
 | L27 | `behavior.move_towards_target`'s `within_radius` is the distance the mob keeps FROM its target (32 = never approaches); there is no damage-free pathfinding chase goal. | Chase group uses `melee_attack` (+ `minecraft:attack`) for pathfinding; the framework cancels that vanilla melee damage in the `entityHurt` before-event (`ai.vanillaMelee: false`, MythicMobs `CancelEvent ~onAttack`). Skill damage is told apart by a flag set inside `applyDamage` \[VERIFY: before-event is synchronous\]. | Solved by design |
 | L29 | No Script API for camera shake. | `cameraShake` mechanic runs `/camerashake add @s <intensity> <seconds> <type>` on each player. | Solved by design |
 | L30 | Vanilla melee chase walks into the target until body contact; MythicMobs' 40-tick attack timer + random picks feel sluggish on Bedrock. | `ai.stopDistance` holds position near the target (skill speed boosts exempt); converter `tuning` (job file) can shorten the attack timer and set `randomSkill{mode=available}`. | Solved by design |
+| L31 | Removing a component group that defines a component the entity also has in base `components` (e.g. `minecraft:damage_sensor`) leaves the entity without it — the stub's `mb:invuln_off` broke a custom-death sensor after reloads. | Invulnerability is script-level (cancel in the `entityHurt` before-event); the stub never toggles groups that shadow owner components. | Solved by design |
+| L32 | Boss skills with `hnp=true` and vanilla `hurt_by_target` made bosses fight each other. | Framework cancels boss→boss damage (`ai.friendlyFire` opt-in), hitbox/@EntitiesInRadius/@Cone skip bosses, stub `hurt_by_target` filtered to players. | Solved by design |
 | L28 | ModelEngine part pivots + offsets don't describe where a weapon actually is (the `edge4` pivot is the hilt). | Converter `blades`: bakes the blade tip; hits use a hilt→tip capsule, summons land at the tip. Verified per attack with `npm run sim:hits`. | Solved by design |
 
 ### API notes (all \[VERIFY\] before use)
@@ -600,6 +602,8 @@ M2 deliberately comes before the full converter: it needs only a minimal bake (l
 - **M3:** full baking (all interpolation modes, Molang sampling, unbakeable detection), markers and hit frames, entity patch report, config skeleton, report, Python unit tests.
 - **M4:** remaining v1 triggers, targeters, conditions and mechanics; bone hit-sphere attacks; reset/leash; threat table; shared particle library; overlay.
 - **M5:** convert 2–3 purchased bosses end to end; fix framework gaps found; set CPU budget (D8); update this document; tag v1.
+
+**Progress (2026-10-05):** M4 delivered so far — reset/leash (`ai.leashRange`, `ai.resetAfterNoPlayers`, `onReset`), `/mb:perf` profiler (rolling ms/tick) for D8, no boss-vs-boss damage, script-level invulnerability, and the §13 modules: heal, percentDamage, ignite, lightning, lunge, velocity, pull, knockback, teleport, teleportBehind, projectile (scripted particle projectile), particleSphere/particleLine, setProperty, title/actionBar, tempBlocks (air-only, mobGriefing, restored across reloads), setVariable, signal; targeters RandomPlayer, ThreatTable, Cone, Ring; conditions lineOfSight, variable, height, playersNearby; triggers onInteract, onSignal. Still open in M4: shared particle library, weak-point raycast (v1.1). Open in M3: Blockbench timeline markers / hit frames, `q.anim_time`-only Molang.
 
 ## 15. Open decisions and items to verify
 

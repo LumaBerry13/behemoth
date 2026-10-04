@@ -8,7 +8,7 @@ Persistent context for Claude Code sessions. The **single source of truth** is
 
 A JavaScript framework on the Minecraft Bedrock Script API (`@minecraft/server`) that recreates the MythicMobs + ModelEngine boss workflow. One JS config file per boss; mechanics, targeters, conditions and triggers are plug-in modules bound in manager files. Plus an offline **Python converter** that bakes bone tracks / animation data from `.geo.json` + `.animation.json` (+ optional `.bbmodel`).
 
-**Status (2026-10-04):** M1 core tested in-game with `mb:test_boss` (vanilla zombie model). First real boss **Dark Knight** (`boss:dark_knight`, MythicMobs mob `bl_dark_knight`) converted with the Python converter and deployed; awaiting the owner's in-game test and review. The MM stones entity (`bl_dark_knight_stones`) is intentionally NOT converted — the boss summons a `minecraft:pig` stand-in (job file `mob_types`).
+**Status (2026-10-05):** M1 + M2 done: Dark Knight (`boss:dark_knight`, MythicMobs mob `bl_dark_knight`) converted and tested in-game by the owner, including `/reload`. M4 in progress: reset/leash, profiler and all §13 v1 modules are in; next is the shared particle library and the second real boss (whose YAML decides further modules). The MM stones entity (`bl_dark_knight_stones`) is intentionally NOT converted — the boss summons a `minecraft:pig` stand-in (job file `mob_types`).
 
 ## Dev commands
 
@@ -18,6 +18,8 @@ A JavaScript framework on the Minecraft Bedrock Script API (`@minecraft/server`)
 - `npm run convert -- --job private/<boss>.job.json` — run the converter (writes `private/build/` plus `<boss>.report.md`). `npm run test:converter` — pytest.
 - `npm run sim -- <typeId> [ticks] [--hit N] [--distance D] [--walk] [--debug] [--death-event E]` — headless run of the real framework against a `@minecraft/server` stub (`tools/sim/`). Use it to catch runtime errors / broken skill flows before asking the owner to test. No physics or pathing.
 - `npm run sim:hits -- <typeId> <skill,skill>` — swings each attack at players placed around the boss (front/sides/behind × 1.5–4.5 blocks) using the real baked tracks, and checks vanilla-melee cancel + walk speed. Run after any change to hitboxes, bones or the converter's bake.
+- `npm run sim:scenarios -- [typeId]` — regression scenarios: no friendly fire, custom-death backstop, reload mid-death, reset, leash, script invulnerability, and (test boss) every `demo_*` module skill. Run for both bosses after any core change.
+- `npm run test:converter` includes an end-to-end test: the made-up kitchen-sink boss in `converter/tests/fixtures/kitchen/` is converted and checked with `node tools/validate.mjs --config <file>`. Extend its YAML when adding a MythicMobs mapping.
 - validate / sim / deploy include `private/build` bosses automatically when present.
 - The typings at `node_modules/@minecraft/server/index.d.ts` are the reference for API names — grep them instead of guessing.
 
@@ -90,7 +92,8 @@ Key runtime files:
 - `scripts/registry/SkillManager.js` — registries **and** the module binding list (`bindModules`). Add a module = new file + import + bind line.
 - `scripts/bosses/index.js` — boss binding list (`bindBosses`). Add a boss = config file + import + bind line.
 - `scripts/core/` — `BossManager` (events → bus, instances, persistence, drops), `BossInstance` (phase, cooldowns, lock, anim, bone lookup), `SkillExecutor` (runs compiled skills, delays via scheduler), `Validator` (compiles configs at startup), `SkillParser`, `Scheduler` (+`CancelToken`), `EventBus`, `ThreatTable`, `Persistence`, `Random` (seedable), `Logger`, `vec.js`.
-- Modules get everything through `ctx.services` (adapter, scheduler, bus, bosses, executor, random, log). They may import the pure helpers `core/vec.js` and `core/SkillParser.js` (`compare`), nothing else from core.
+- Modules get everything through `ctx.services` (adapter, scheduler, bus, bosses, executor, random, log). They may import the pure helpers `core/vec.js` and `core/SkillParser.js` (`compare`) and `modules/shared/*` (e.g. `deal_damage.js` — always use it for damage so damageMultiplier/ignoreDifficulty/debug logging apply), nothing else from core.
+- The test boss has trigger-less `demo_*` skills showcasing every module; run them in-game with `/mb:skill demo_<name>`.
 - `generated/test_boss/*.js` are hand-written stand-ins in converter output format.
 - `bosses/private/index.js` is a committed EMPTY stub; the real one (plus converted boss configs and generated data) exists only in `private/build/` and the deployed game folder. Never commit anything from `private/`.
 
@@ -115,7 +118,9 @@ MythicMobs → Mythic Bedrock translation rules (converter `mythic.py`):
 - Unsupported items are dropped and listed in `private/build/<boss>.report.md` — read it after every conversion.
 - Job `tuning` = Bedrock-side adjustments NOT in the YAML (all reported): `stop_distance`, `damage_multiplier`, `randomskill_mode` (`available` = only pick skills that can fire now), `trigger_overrides` (`{metaskill: "onTimer:10"}` for the mob lines calling it), `extra_lines` (`{metaskill: [lines]}` prepended; time them with `delay`), `extra_lines_enabled` (false = keep them in the job but do not apply). The Dark Knight's camera shakes are defined there and currently DISABLED at the owner's request (2026-10-05). Put boss feel tweaks here, never in generated files.
 
-Debug commands (cheats on): `/mb:spawn <boss>`, `/mb:skill <name>`, `/mb:phase <id>`, `/mb:despawn`, `/mb:debug [on]`, `/mb:bones [on]`, `/mb:seed [n]`.
+Debug commands (cheats on): `/mb:spawn <boss>`, `/mb:skill <name>`, `/mb:phase <id>`, `/mb:despawn`, `/mb:reset`, `/mb:perf`, `/mb:debug [on]`, `/mb:bones [on]`, `/mb:seed [n]`.
+
+Boss safety rules (learned in testing): bosses never damage each other (`ai.friendlyFire` opt-in); invulnerability is script-level — NEVER toggle stub component groups that define components the owner's entity also has (L31); custom-death bodies are removed by a backstop (`death.removeAfter`); `ai.leashRange` / `ai.resetAfterNoPlayers` reset a boss (heal, phase 1, clear threat/cooldowns, back to spawn, `onReset`); `tempBlocks` only replace air, respect mobGriefing and are persisted in the world property `mb:tempblocks` so reloads restore them.
 
 ## Mythic-ready entity stub (design doc §5)
 
@@ -151,9 +156,9 @@ Every boss entity JSON must contain:
 
 - **M0:** settle D1–D4 (D1/D2/D9 provisional, D3 defaults implemented, D4 open); pin API version; check [VERIFY] items affecting stub/core; repo + pack skeletons.
 - **M1 (done, tested in-game):** adapter, scheduler + cancel tokens, event bus, BossManager/SkillManager, BossInstance, persistence, validator, `config.d.ts`, debug commands, log levels.
-- **M2 (current — Dark Knight converted, awaiting in-game test):** stub on one boss; minimal converter (lengths, one baked bone); ~10 MVP modules (state, damage, leap, particle, particleRing, sound, delay, setAI, summon, phase change); bone-marker calibration; first profiling.
+- **M2 (done, tested in-game):** stub on one boss; minimal converter (lengths, one baked bone); ~10 MVP modules (state, damage, leap, particle, particleRing, sound, delay, setAI, summon, phase change); bone-marker calibration; first profiling.
 - **M3:** full converter (interpolation modes, Molang, unbakeable detection, markers/hit frames, entity patch, config skeleton, report, pytest).
-- **M4:** remaining v1 modules, bone hit-sphere attacks, reset/leash, threat table, particle library, overlay.
+- **M4 (current):** remaining v1 modules, bone hit-sphere attacks, reset/leash, threat table, particle library, overlay.
 - **M5:** convert 2–3 purchased bosses end to end; set CPU budget; tag v1.
 
 ## Open decisions (design doc §15)

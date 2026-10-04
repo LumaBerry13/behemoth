@@ -44,3 +44,33 @@ export const ring = (center, radius, points) => {
   }
   return out;
 };
+
+/**
+ * Evenly spread points on a sphere surface (Fibonacci lattice).
+ * @param {V3} center @param {number} radius @param {number} points @returns {V3[]}
+ */
+export const sphere = (center, radius, points) => {
+  const out = [];
+  const golden = Math.PI * (3 - Math.sqrt(5));
+  for (let i = 0; i < points; i++) {
+    const y = points === 1 ? 0 : 1 - (i / (points - 1)) * 2;
+    const r = Math.sqrt(1 - y * y);
+    const a = golden * i;
+    out.push({ x: center.x + Math.cos(a) * r * radius, y: center.y + y * radius, z: center.z + Math.sin(a) * r * radius });
+  }
+  return out;
+};
+
+/**
+ * Points from a to b, `perBlock` per block (at least 2).
+ * @param {V3} a @param {V3} b @param {number} perBlock @returns {V3[]}
+ */
+export const line = (a, b, perBlock) => {
+  const n = Math.max(2, Math.ceil(distance(a, b) * perBlock));
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const f = i / (n - 1);
+    out.push({ x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f, z: a.z + (b.z - a.z) * f });
+  }
+  return out;
+};

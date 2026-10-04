@@ -103,6 +103,25 @@ import shieldBreak from "../modules/mechanics/shield_break.js";
 import potion from "../modules/mechanics/potion.js";
 import propel from "../modules/mechanics/propel.js";
 import cameraShake from "../modules/mechanics/camera_shake.js";
+import heal from "../modules/mechanics/heal.js";
+import percentDamage from "../modules/mechanics/percent_damage.js";
+import ignite from "../modules/mechanics/ignite.js";
+import lightning from "../modules/mechanics/lightning.js";
+import lunge from "../modules/mechanics/lunge.js";
+import velocityMechanic from "../modules/mechanics/velocity.js";
+import pull from "../modules/mechanics/pull.js";
+import knockback from "../modules/mechanics/knockback.js";
+import teleport from "../modules/mechanics/teleport.js";
+import teleportBehind from "../modules/mechanics/teleport_behind.js";
+import projectile from "../modules/mechanics/projectile.js";
+import particleSphere from "../modules/mechanics/particle_sphere.js";
+import particleLine from "../modules/mechanics/particle_line.js";
+import setProperty from "../modules/mechanics/set_property.js";
+import title from "../modules/mechanics/title.js";
+import actionBar from "../modules/mechanics/action_bar.js";
+import tempBlocks from "../modules/mechanics/temp_blocks.js";
+import setVariable from "../modules/mechanics/set_variable.js";
+import signal from "../modules/mechanics/signal.js";
 
 import self from "../modules/targeters/self.js";
 import target from "../modules/targeters/target.js";
@@ -114,6 +133,10 @@ import selfLocation from "../modules/targeters/self_location.js";
 import targetLocation from "../modules/targeters/target_location.js";
 import bone from "../modules/targeters/bone.js";
 import forward from "../modules/targeters/forward.js";
+import randomPlayer from "../modules/targeters/random_player.js";
+import threatTable from "../modules/targeters/threat_table.js";
+import cone from "../modules/targeters/cone.js";
+import ringTargeter from "../modules/targeters/ring.js";
 
 import healthPct from "../modules/conditions/health_pct.js";
 import distanceCondition from "../modules/conditions/distance.js";
@@ -124,6 +147,10 @@ import hasTag from "../modules/conditions/has_tag.js";
 import offGcd from "../modules/conditions/off_gcd.js";
 import moving from "../modules/conditions/moving.js";
 import inBlock from "../modules/conditions/in_block.js";
+import lineOfSight from "../modules/conditions/line_of_sight.js";
+import variableCondition from "../modules/conditions/variable.js";
+import height from "../modules/conditions/height.js";
+import playersNearby from "../modules/conditions/players_nearby.js";
 
 import onSpawn from "../modules/triggers/on_spawn.js";
 import onTimer from "../modules/triggers/on_timer.js";
@@ -134,6 +161,8 @@ import onPhase from "../modules/triggers/on_phase.js";
 import animEnd from "../modules/triggers/anim_end.js";
 import onMarker from "../modules/triggers/on_marker.js";
 import onReset from "../modules/triggers/on_reset.js";
+import onInteract from "../modules/triggers/on_interact.js";
+import onSignal from "../modules/triggers/on_signal.js";
 
 /** @param {SkillManager} sm */
 export function bindModules(sm) {
@@ -165,6 +194,25 @@ export function bindModules(sm) {
   sm.bind("potion", potion);
   sm.bind("propel", propel);
   sm.bind("cameraShake", cameraShake);
+  sm.bind("heal", heal);
+  sm.bind("percentDamage", percentDamage);
+  sm.bind("ignite", ignite);
+  sm.bind("lightning", lightning);
+  sm.bind("lunge", lunge);
+  sm.bind("velocity", velocityMechanic);
+  sm.bind("pull", pull);
+  sm.bind("knockback", knockback);
+  sm.bind("teleport", teleport);
+  sm.bind("teleportBehind", teleportBehind);
+  sm.bind("projectile", projectile);
+  sm.bind("particleSphere", particleSphere);
+  sm.bind("particleLine", particleLine);
+  sm.bind("setProperty", setProperty);
+  sm.bind("title", title);
+  sm.bind("actionBar", actionBar);
+  sm.bind("tempBlocks", tempBlocks);
+  sm.bind("setVariable", setVariable);
+  sm.bind("signal", signal);
 
   sm.bindTargeter("self", self);
   sm.bindTargeter("target", target);
@@ -176,6 +224,10 @@ export function bindModules(sm) {
   sm.bindTargeter("TargetLocation", targetLocation);
   sm.bindTargeter("Bone", bone);
   sm.bindTargeter("Forward", forward);
+  sm.bindTargeter("RandomPlayer", randomPlayer);
+  sm.bindTargeter("ThreatTable", threatTable);
+  sm.bindTargeter("Cone", cone);
+  sm.bindTargeter("Ring", ringTargeter);
 
   sm.bindCondition("healthPct", healthPct);
   sm.bindCondition("distance", distanceCondition);
@@ -186,6 +238,10 @@ export function bindModules(sm) {
   sm.bindCondition("offGcd", offGcd);
   sm.bindCondition("moving", moving);
   sm.bindCondition("inBlock", inBlock);
+  sm.bindCondition("lineOfSight", lineOfSight);
+  sm.bindCondition("variable", variableCondition);
+  sm.bindCondition("height", height);
+  sm.bindCondition("playersNearby", playersNearby);
 
   sm.bindTrigger("onSpawn", onSpawn);
   sm.bindTrigger("onTimer", onTimer);
@@ -196,4 +252,6 @@ export function bindModules(sm) {
   sm.bindTrigger("animEnd", animEnd);
   sm.bindTrigger("onMarker", onMarker);
   sm.bindTrigger("onReset", onReset);
+  sm.bindTrigger("onInteract", onInteract);
+  sm.bindTrigger("onSignal", onSignal);
 }

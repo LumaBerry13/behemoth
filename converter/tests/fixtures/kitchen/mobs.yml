@@ -1,0 +1,16 @@
+# Made-up MythicMobs mob for converter tests (not from any purchased pack).
+kitchen_boss:
+  Type: ZOMBIE
+  Display: 'Kitchen Sink'
+  Health: 150
+  DamageModifiers:
+  - FALL 0
+  Options:
+    FollowRange: 24
+  Modules:
+    ThreatTable: true
+  Skills:
+  - skill{s=ks_opener} @self ~onSpawn
+  - skill{s=ks_rotation} @target ~onTimer:40
+  - skill{s=ks_poke} @trigger ~onInteract
+  - skill{s=ks_pong} @self ~onSignal:pong

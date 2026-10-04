@@ -170,5 +170,69 @@ console.log("\n6. invulnerability is script-level (entity groups untouched)");
   check("no mb:invuln_* entity events fired", events() === before);
 }
 
+// ---------------------------------------------------------------------------
+console.log("\n7. module showcase (demo_* skills, test boss only)");
+{
+  clearWorld();
+  const { e, boss } = spawnBoss(0, 0);
+  if (!boss.compiled.skills.has("demo_projectile")) check("skipped (boss has no demo_* skills)", true);
+  else {
+    const player = new mc.Player("P", dim, { x: 0, y: 64, z: 5 });
+    e.applyDamage(1, { cause: "entityAttack", damagingEntity: player }); // threat entry
+    mc.tick(2);
+    /** Cast a demo skill and return the log lines it produced. */
+    const run = (name, ticks = 40) => {
+      const start = mc.log.length;
+      boss.cancelAll();
+      services.executor.castByName(boss, name, { triggerEntity: player }, { force: true });
+      mc.tick(ticks);
+      return mc.log.slice(start);
+    };
+    const has = (lines, kind, text = "") => lines.some(([, k, d]) => k === kind && d.includes(text));
+
+    let out = run("demo_projectile");
+    check("projectile flies and hits (damage + fire)", has(out, "hurt", "minecraft:player") && has(out, "fire", "minecraft:player"));
+    check("projectile draws particles along its path", out.filter(([, k]) => k === "particle").length >= 4);
+    out = run("demo_pull", 5);
+    check("pull pushes the player toward the boss (−z)", has(out, "knockback", "minecraft:player (0, 0.2, -1)"));
+    out = run("demo_knockback", 5);
+    check("knockback via @Cone hits the player in front", has(out, "knockback", "minecraft:player"));
+    const hp0 = e.health.currentValue;
+    e.health.currentValue = 100;
+    run("demo_heal", 5);
+    check("heal +25% of max", e.health.currentValue === 150, `100 → ${e.health.currentValue}`);
+    e.health.currentValue = hp0;
+    player.health.currentValue = 20;
+    out = run("demo_percent", 5);
+    check("percentDamage 25% via @ThreatTable", has(out, "hurt", "minecraft:player -5"));
+    out = run("demo_lightning", 5);
+    check("lightning on @Ring: 6 strikes", out.filter(([, k]) => k === "lightning").length === 6);
+    out = run("demo_lunge", 5);
+    check("lunge toward @RandomPlayer", has(out, "impulse", "(0, 0.1, 1.4)"));
+    out = run("demo_teleport", 5);
+    check("teleportBehind moves the boss", has(out, "teleport", "mb:test_boss"));
+    e.location = { x: 0, y: 64, z: 0 };
+    out = run("demo_blocks", 5);
+    const placed = out.filter(([, k, d]) => k === "block" && d.endsWith("cobweb")).length;
+    check("tempBlocks placed (mobGriefing on)", placed > 0, `${placed} blocks`);
+    check("tempBlocks persisted for reload safety", typeof mc.world.dyn["mb:tempblocks"] === "string");
+    out = run("demo_title", 100);
+    check("tempBlocks restored to air after their time", out.filter(([, k, d]) => k === "block" && d.endsWith("air")).length === placed);
+    check("pending tempBlocks cleared from the world property", mc.world.dyn["mb:tempblocks"] === undefined);
+    run("demo_property", 2);
+    check("setProperty", e.props["mb:visibility"] === 2);
+    let third = 0;
+    for (let i = 0; i < 3; i++) third += run("demo_counter", 3).filter(([, k, d]) => k === "chat" && d.includes("Third press")).length;
+    check("setVariable + variable condition fire on the 3rd press only", third === 1 && boss.vars.presses === 3);
+    check("signal reaches the onSignal handler", mc.log.some(([, k, d]) => k === "actionbar" && d.includes("signal received")));
+    check("title + actionBar shown", mc.log.some(([, k, d]) => k === "title" && d.includes("Test Boss")));
+    const before = mc.log.length;
+    mc.world.afterEvents.playerInteractWithEntity.fire({ player, target: e });
+    mc.tick(2);
+    check("onInteract + lineOfSight/height/playersNearby", mc.log.slice(before).some(([, k, d]) => k === "chat" && d.includes("ignores you")));
+    player.remove();
+  }
+}
+
 console.log(failures ? `\n[scenarios] ${failures} FAILED` : "\n[scenarios] all passed");
 process.exit(failures ? 1 : 0);

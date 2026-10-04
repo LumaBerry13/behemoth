@@ -26,10 +26,18 @@ console.log(`[validate] ${registry.summary()}`);
 
 const configs = [];
 const collector = { bind: (c) => configs.push(c) };
-bindBosses(collector);
+
+// --config <file>: validate just that boss config module (used by converter tests).
+const cfgArg = process.argv.indexOf("--config");
+if (cfgArg >= 0) {
+  const mod = await import(pathToFileURL(process.argv[cfgArg + 1]).href);
+  configs.push(mod.default);
+} else {
+  bindBosses(collector);
+}
 
 const privateIndex = join(root, "private", "build", "BP", "scripts", "bosses", "private", "index.js");
-if (existsSync(privateIndex)) {
+if (cfgArg < 0 && existsSync(privateIndex)) {
   const { bindPrivateBosses } = await import(pathToFileURL(privateIndex).href);
   bindPrivateBosses(collector);
   console.log("[validate] including converted bosses from private/build");

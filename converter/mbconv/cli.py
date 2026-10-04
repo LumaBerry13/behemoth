@@ -18,6 +18,7 @@ files and the per-boss mappings:
   "sounds": { "<mm sound>": "<bedrock sound event>" },
   "bone_aliases": { "<modelengine part>": "<bedrock bone>" },
   "blades": ["<bone>"],  # weapon bones: hits use a hilt->tip capsule, summons land at the tip
+  "particles": { "<java particle>": "<bedrock particle id>" },
   "tuning": {            # Bedrock-side adjustments on top of the YAML (all optional)
     "stop_distance": 2.5,                  # ai.stopDistance
     "leash_range": 48,                     # ai.leashRange (default 48)
@@ -110,6 +111,7 @@ def convert(job_path: Path, out: Path) -> Path:
         sounds=job.get("sounds", {}),
         bone_aliases=job.get("bone_aliases", {}),
         blades=set(job.get("blades", [])),
+        particles=job.get("particles", {}),
     )
     ctx.base_states["idle"].append("idle") if "idle" in action_anims else None
     ctx.base_states["walk"].append("walk") if "walk" in action_anims else None

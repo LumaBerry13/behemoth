@@ -153,6 +153,26 @@ MM_POTIONS = {
     "LEVITATION": "levitation", "SLOW_FALLING": "slow_falling", "DARKNESS": "darkness",
 }
 
+# Java particle names → Bedrock particle ids (vanilla). Unknown names fall back to
+# DEFAULT_PARTICLE and are reported; jobs can override with "particles".
+MM_PARTICLES = {
+    "flame": "minecraft:basic_flame_particle", "soul_fire_flame": "minecraft:blue_flame_particle",
+    "smoke": "minecraft:basic_smoke_particle", "large_smoke": "minecraft:large_explosion",
+    "explosion": "minecraft:large_explosion", "explosion_large": "minecraft:large_explosion",
+    "explosion_huge": "minecraft:huge_explosion_emitter", "explosion_emitter": "minecraft:huge_explosion_emitter",
+    "crit": "minecraft:critical_hit_emitter", "crit_magic": "minecraft:critical_hit_emitter",
+    "reddust": "minecraft:redstone_wire_dust_particle", "dust": "minecraft:redstone_wire_dust_particle",
+    "portal": "minecraft:portal_directional", "cloud": "minecraft:evaporation_elephant_toothpaste_vapor_particle",
+    "heart": "minecraft:heart_particle", "villager_happy": "minecraft:villager_happy",
+    "happy_villager": "minecraft:villager_happy", "villager_angry": "minecraft:villager_angry",
+    "angry_villager": "minecraft:villager_angry", "lava": "minecraft:lava_particle",
+    "dripwater": "minecraft:water_drip_particle", "spell": "minecraft:mobspell_emitter",
+    "witch": "minecraft:witchspell_emitter", "snowball": "minecraft:snowflake_particle",
+    "end_rod": "minecraft:endrod", "totem": "minecraft:totem_particle", "sonic_boom": "minecraft:sonic_explosion",
+    "sweep_attack": "minecraft:critical_hit_emitter", "block_crack": "minecraft:basic_smoke_particle",
+}
+DEFAULT_PARTICLE = "minecraft:basic_flame_particle"
+
 # Mechanics that only drive ModelEngine / Java behaviour — no Bedrock equivalent needed.
 SKIPPED_MECHANICS = {
     "model": "ModelEngine model attach — the Bedrock entity already uses the model",
@@ -171,6 +191,7 @@ class Context:
     sounds: dict[str, str]
     bone_aliases: dict[str, str]
     blades: set[str] = field(default_factory=set)  # bones whose hits use a hilt->tip capsule
+    particles: dict[str, str] = field(default_factory=dict)  # job overrides for MM particle names
     notes: list[str] = field(default_factory=list)
     used_mechanics: set[str] = field(default_factory=set)
     used_bones: set[str] = field(default_factory=set)
@@ -189,6 +210,18 @@ def _opt(opts: dict[str, Any], *keys: str, default: Any = None) -> Any:
 
 def _ticks(v: Any) -> int:
     return int(round(float(v)))
+
+
+def _particle(ctx: "Context", name: Any, where: str) -> str:
+    n = str(name or "").lower().replace("minecraft:", "")
+    if str(name) in ctx.particles:
+        return ctx.particles[str(name)]
+    if ":" in str(name):
+        return str(name)
+    if n in MM_PARTICLES:
+        return MM_PARTICLES[n]
+    ctx.note(where, f"particle '{name}' has no Bedrock mapping; using {DEFAULT_PARTICLE} (job \"particles\" can map it)")
+    return DEFAULT_PARTICLE
 
 
 # --------------------------------------------------------------------------- #
@@ -247,6 +280,15 @@ def translate_targeter(t: tuple[str, dict[str, Any]] | None, ctx: Context, where
             return f"@Bone{_fmt_opts({'bone': bone, **off})}"
         ctx.note(where, f"@modelpart '{pid}' is not in the Bedrock geometry; using the boss position instead")
         return f"@SelfLocation{_fmt_opts(off)}"
+    if name in ("threattable", "tt"):
+        return "@ThreatTable"
+    if name in ("randomthreattarget", "rtt"):
+        ctx.note(where, "@RandomThreatTarget approximated as @RandomPlayer")
+        return "@RandomPlayer"
+    if name == "cone":
+        return f"@Cone{_fmt_opts({'angle': float(_opt(o, 'angle', 'a', default=60)), 'r': float(_opt(o, 'range', 'r', default=6))})}"
+    if name == "ring":
+        return f"@Ring{_fmt_opts({'radius': float(_opt(o, 'radius', 'r', default=5)), 'points': int(_opt(o, 'points', 'p', default=8))})}"
     if name == "forward":
         f = float(_opt(o, "f", "forward", default=1))
         y = float(_opt(o, "yo", "yoffset", "y", default=0))
@@ -305,6 +347,30 @@ def translate_condition(c: ConditionLine, ctx: Context, where: str, target_condi
             return [f"{bang}inBlock{{blocks={blocks}}}"]
         if n in ("hastarget",):
             return [f"{bang}hasTarget"]
+        if n in ("lineofsight", "los"):
+            return [f"{bang}lineOfSight"]
+        if n in ("height", "altitude"):
+            if n == "altitude":
+                ctx.note(where, "altitude (height above ground) approximated by Y coordinate (height)")
+            return _range_conditions("height", _opt(o, "h", "height", "a", default=0), expect)
+        if n in ("playerswithin", "playersinradius"):
+            r = float(_opt(o, "d", "distance", "r", "radius", default=16))
+            spec = str(_opt(o, "a", "amount", default=">0")).strip()
+            m = re.fullmatch(r"(<=|>=|<|>|=)?\s*(\d+)", spec)
+            rng = re.fullmatch(r"(\d+)to(\d+)", spec)
+            if rng:
+                return [f"{bang}playersNearby{{r={r};min={rng.group(1)};max={rng.group(2)}}}"]
+            if not m:
+                raise ValueError(f"cannot read amount '{spec}'")
+            op, n_ = m.group(1) or ">=", int(m.group(2))
+            lim = {">": f"min={n_ + 1}", ">=": f"min={n_}", "<": f"min=0;max={n_ - 1}", "<=": f"min=0;max={n_}", "=": f"min={n_};max={n_}"}[op]
+            return [f"{bang}playersNearby{{r={r};{lim}}}"]
+        if n in ("variableequals", "varequals"):
+            return [f"{bang}variable{{name={_opt(o, 'var', 'variable', 'name')};eq={_opt(o, 'value', 'val', 'v')}}}"]
+        if n in ("variableinrange", "varinrange"):
+            lo, _, hi = str(_opt(o, "value", "val", "v", default="0to0")).partition("to")
+            name_ = _opt(o, "var", "variable", "name")
+            return [f"{bang}variable{{name={name_};ge={lo}}}", f"{bang}variable{{name={name_};le={hi or lo}}}"]
         if n in ("health", "healthpercent"):
             spec = str(_opt(o, "h", "health", "a", "amount", default="")).replace("%", "")
             return _range_conditions("healthPct", spec, expect)
@@ -425,8 +491,91 @@ def translate_line(sl: SkillLine, ctx: Context, where: str) -> dict[str, Any] | 
         line = {"m": "summon", "o": sopts}
     elif n == "propel":
         line = {"m": "propel", "o": {"velocity": float(_opt(o, "v", "velocity", default=1))}}
-    elif n == "message":
+    elif n in ("message", "sendmessage"):
         line = {"m": "message", "o": {"text": str(_opt(o, "m", "msg", "message", default=""))}}
+    elif n in ("actionmessage", "sendactionmessage", "actionbar"):
+        line = {"m": "actionBar", "o": {"text": str(_opt(o, "m", "msg", "message", default=""))}}
+    elif n in ("sendtitle", "title"):
+        line = {"m": "title", "o": {"title": str(_opt(o, "title", "t", default="")),
+                                     "subtitle": str(_opt(o, "subtitle", "st", default="")),
+                                     "fadeIn": _ticks(_opt(o, "fadein", "fi", default=5)),
+                                     "stay": _ticks(_opt(o, "stay", "s", default=40)),
+                                     "fadeOut": _ticks(_opt(o, "fadeout", "fo", default=10))}}
+    elif n == "heal":
+        line = {"m": "heal", "o": {"amount": float(_opt(o, "amount", "a", default=1))}}
+    elif n == "healpercent":
+        line = {"m": "heal", "o": {"percent": float(_opt(o, "multiplier", "m", "percent", "p", default=0.1))}}
+    elif n == "percentdamage":
+        line = {"m": "percentDamage", "o": {"percent": float(_opt(o, "percent", "p", default=0.1)),
+                                            **({"current": True} if _opt(o, "currenthealth", "ch") is True else {})}}
+    elif n == "ignite":
+        line = {"m": "ignite", "o": {"ticks": _ticks(_opt(o, "ticks", "t", "duration", "d", default=60))}}
+    elif n in ("lightning", "strikelightning"):
+        line = {"m": "lightning", "o": {}}
+    elif n == "lunge":
+        line = {"m": "lunge", "o": {"velocity": float(_opt(o, "velocity", "v", default=1)),
+                                     "height": float(_opt(o, "velocityy", "vy", default=0.1))}}
+    elif n == "velocity":
+        mode = str(_opt(o, "mode", "m", default="SET")).upper()
+        if mode == "MULTIPLY":
+            ctx.note(where, "velocity mode MULTIPLY not supported; treated as ADD")
+        line = {"m": "velocity", "o": {"x": float(_opt(o, "velocityx", "vx", "x", default=0)),
+                                        "y": float(_opt(o, "velocityy", "vy", "y", default=0)),
+                                        "z": float(_opt(o, "velocityz", "vz", "z", default=0)),
+                                        **({"clear": True} if mode == "SET" else {})}}
+    elif n == "pull":
+        line = {"m": "pull", "o": {"velocity": float(_opt(o, "velocity", "v", default=1)) / 10}}
+        ctx.note(where, "pull velocity ÷10 like throw [VERIFY by feel]")
+    elif n in ("teleport", "tp"):
+        line = {"m": "teleport", "o": {}}
+    elif n in ("projectile", "missile"):
+        on_hit = _opt(o, "onhit", "oh")
+        if not on_hit:
+            ctx.note(where, f"{n} without onHit dropped")
+            return None
+        if any(k in o for k in ("ontick", "ot", "onstart", "os")):
+            ctx.note(where, f"{n} onTick/onStart visuals not converted; drawn with a particle trail instead")
+        v = float(_opt(o, "velocity", "v", default=5))
+        line = {"m": "projectile", "o": {
+            "particle": _particle(ctx, _opt(o, "particle", "p", default="flame"), where),
+            "onHit": str(on_hit),
+            "speed": round(v / 20, 3),  # MythicMobs velocity is blocks/second [VERIFY]
+            "range": float(_opt(o, "maxdistance", "md", default=40)),
+            "radius": float(_opt(o, "hitradius", "hr", "horizontalradius", default=1)),
+            **({"hitNonPlayers": True} if _opt(o, "hitnonplayers", "hnp") is True else {}),
+            **({"onEnd": str(_opt(o, "onend", "oe"))} if _opt(o, "onend", "oe") else {}),
+            **({"gravity": float(_opt(o, "gravity", "g")) / 20} if _opt(o, "gravity", "g") else {}),
+        }}
+    elif n in ("particle", "effect:particle", "e:p"):
+        line = {"m": "particle", "o": {"particle": _particle(ctx, _opt(o, "particle", "p", default="flame"), where),
+                                        "count": int(_opt(o, "amount", "a", default=1)),
+                                        "spread": float(_opt(o, "hspread", "hs", "spread", default=0)),
+                                        "yOffset": float(_opt(o, "yoffset", "y", default=0))}}
+    elif n in ("particlering", "effect:particlering", "e:pr"):
+        line = {"m": "particleRing", "o": {"particle": _particle(ctx, _opt(o, "particle", "p", default="flame"), where),
+                                            "radius": float(_opt(o, "radius", "r", default=3)),
+                                            "points": min(128, int(_opt(o, "points", "pt", "amount", "a", default=16)))}}
+    elif n in ("particlesphere", "effect:particlesphere", "e:ps"):
+        line = {"m": "particleSphere", "o": {"particle": _particle(ctx, _opt(o, "particle", "p", default="flame"), where),
+                                              "radius": float(_opt(o, "radius", "r", default=2)),
+                                              "points": min(200, int(_opt(o, "amount", "a", "points", default=40)))}}
+    elif n in ("particleline", "effect:particleline", "e:pl"):
+        line = {"m": "particleLine", "o": {"particle": _particle(ctx, _opt(o, "particle", "p", default="flame"), where),
+                                            "density": round(1 / max(0.05, float(_opt(o, "distancebetween", "db", default=0.25))), 2)}}
+    elif n in ("setvariable", "setvar"):
+        line = {"m": "setVariable", "o": {"name": str(_opt(o, "variable", "var", "name")),
+                                           "value": _opt(o, "value", "val", "v", default=0)}}
+    elif n in ("variableadd", "varadd"):
+        line = {"m": "setVariable", "o": {"name": str(_opt(o, "variable", "var", "name")),
+                                           "add": float(_opt(o, "amount", "a", default=1))}}
+    elif n == "signal":
+        sig = str(_opt(o, "signal", "s", default=""))
+        if sl.targeter and sl.targeter[0].lower() not in ("self", "caster"):
+            ctx.note(where, f"signal to @{sl.targeter[0]} sent to all bosses within 32 blocks")
+            line = {"m": "signal", "o": {"signal": sig, "radius": 32}}
+            sl.targeter = None
+        else:
+            line = {"m": "signal", "o": {"signal": sig}}
     else:
         ctx.note(where, f"unsupported mechanic `{sl.mechanic}`; line dropped ({sl.raw})")
         return None
@@ -467,7 +616,7 @@ def reachable_skills(mob_lines: list[SkillLine], skills: dict[str, dict]) -> lis
             names += [s.strip() for s in str(_opt(o, "s", "skills", "m", default="")).split(",")]
         elif n == "aura":
             names += [str(v) for k, v in o.items() if k in ("ontick", "ot", "onstart", "os", "onend", "oe")]
-        elif n == "totem":
+        elif n in ("totem", "projectile", "missile"):
             names += [str(v) for k, v in o.items() if k in ("onhit", "oh", "onstart", "os", "onend", "oe", "ontick", "ot")]
         return [x for x in names if x]
 
@@ -484,7 +633,8 @@ def reachable_skills(mob_lines: list[SkillLine], skills: dict[str, dict]) -> lis
 
 
 TRIGGER_MAP = {"onspawn": "onSpawn", "ontimer": "onTimer", "ondamaged": "onDamaged", "ondeath": "onDeath",
-               "onattack": "onAttack", "oninteract": None, "onload": None, "oncombat": None}
+               "onattack": "onAttack", "oninteract": "onInteract", "onsignal": "onSignal", "onload": None,
+               "oncombat": None}
 
 
 def translate_boss(mob_id: str, mob: dict, skills: dict[str, dict], ctx: Context) -> dict[str, Any]:

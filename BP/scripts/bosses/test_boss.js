@@ -100,6 +100,43 @@ export default {
         { m: "particle", o: { particle: "minecraft:huge_explosion_emitter" }, t: "@SelfLocation" },
       ],
     },
+
+    // -----------------------------------------------------------------------
+    // Module showcase: no triggers, run with /mb:skill demo_<name> in-game.
+    // Also exercised headless by `npm run sim:scenarios -- mb:test_boss`.
+    // -----------------------------------------------------------------------
+    demo_projectile: {
+      m: "projectile",
+      o: { particle: "minecraft:basic_flame_particle", onHit: "demo_projectile_hit", speed: 0.9, range: 30 },
+      t: "@target",
+    },
+    demo_projectile_hit: {
+      c: [
+        { m: "damage", o: { amount: 4 } },
+        { m: "ignite", o: { ticks: 40 } },
+        { m: "particle", o: { particle: "minecraft:large_explosion" } },
+      ],
+    },
+    demo_pull: { c: [{ m: "pull", o: { velocity: 1.0 }, t: "@PlayersInRadius{r=12}" }, { m: "particleLine", o: { particle: "minecraft:basic_flame_particle" } }] },
+    demo_knockback: { m: "knockback", o: { velocity: 1.2, height: 0.4 }, t: "@Cone{angle=90;r=6}" },
+    demo_heal: { c: [{ m: "heal", o: { percent: 0.25 } }, { m: "particleSphere", o: { particle: "minecraft:villager_happy", radius: 1.5 } }] },
+    demo_percent: { m: "percentDamage", o: { percent: 0.25 }, t: "@ThreatTable{limit=1}" },
+    demo_lightning: { m: "lightning", t: "@Ring{radius=6;points=6}" },
+    demo_lunge: { m: "lunge", o: { velocity: 1.4 }, t: "@RandomPlayer{r=16}" },
+    demo_velocity: { m: "velocity", o: { y: 0.8, z: 0.6, relative: true } },
+    demo_teleport: { m: "teleportBehind", o: { distance: 2 }, t: "@target" },
+    demo_blocks: { m: "tempBlocks", o: { block: "minecraft:cobweb", radius: 2, ticks: 80 }, t: "@TargetLocation" },
+    demo_title: { c: [{ m: "title", o: { title: "§4Test Boss", subtitle: "module showcase" } }, { m: "actionBar", o: { text: "§7action bar" } }] },
+    demo_property: { m: "setProperty", o: { property: "mb:visibility", value: 2 } },
+    demo_counter: {
+      c: [
+        { m: "setVariable", o: { name: "presses", add: 1 } },
+        { m: "message", o: { text: "§aThird press!" }, if: ["variable{name=presses;ge=3}"] },
+        { m: "signal", o: { signal: "ping", radius: 32 } },
+      ],
+    },
+    on_ping: { tr: "onSignal:ping", m: "actionBar", o: { text: "§bsignal received" }, t: "@PlayersInRadius{r=32}" },
+    on_interact: { tr: "onInteract", if: ["lineOfSight", "height>=-64", "playersNearby{r=16;min=1}"], m: "message", o: { text: "§7The Test Boss ignores you." }, t: "@trigger" },
   },
   drops: [{ item: "minecraft:diamond", amount: [2, 5], chance: 1 }],
   requires: ["state", "damage", "leap", "particle", "particleRing", "sound", "delay", "setAI", "summon", "message", "waitMarker", "invulnerable"],

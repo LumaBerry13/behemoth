@@ -1,0 +1,57 @@
+# Made-up metaskills covering the mechanics/targeters/conditions the converter maps.
+ks_opener:
+  Skills:
+  - sendtitle{title="Kitchen";subtitle="sink";fadein=5;stay=40;fadeout=10} @PlayersInRadius{r=30}
+  - actionmessage{m="ready"} @PlayersInRadius{r=30}
+  - setvariable{var=stage;value=1} @self
+  - particlesphere{p=flame;r=2;a=30} @self
+
+ks_rotation:
+  Conditions:
+  - lineofsight true
+  - playerswithin{d=20;a=>0} true
+  - height{h=>-64} true
+  Skills:
+  - randomskill{s=ks_bolt,ks_storm,ks_dash,ks_grab} @target
+
+ks_bolt:
+  Cooldown: 3
+  Skills:
+  - projectile{onHit=ks_bolt_hit;v=16;md=30;hr=1;particle=flame} @target
+  - particleline{p=crit;db=0.5} @target
+
+ks_bolt_hit:
+  Skills:
+  - damage{a=4}
+  - ignite{ticks=40}
+  - percentdamage{p=0.1}
+
+ks_storm:
+  Cooldown: 6
+  Skills:
+  - lightning @Ring{radius=5;points=4}
+  - particlering{p=smoke;r=5;points=24} @self
+
+ks_dash:
+  Conditions:
+  - variableequals{var=stage;value=1} true
+  Skills:
+  - lunge{v=1.2;vy=0.1} @target
+  - velocity{mode=ADD;vy=0.5} @self
+  - heal{a=5} @self
+  - healpercent{m=0.05} @self
+
+ks_grab:
+  Skills:
+  - pull{v=8} @Cone{a=90;r=8}
+  - teleport @target
+  - variableadd{var=stage;a=1} @self
+  - signal{s=pong} @self
+
+ks_poke:
+  Skills:
+  - sendmessage{m="hey"} @trigger
+
+ks_pong:
+  Skills:
+  - particle{p=heart;a=5;hs=0.5;y=2} @ThreatTable
