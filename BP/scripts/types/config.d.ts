@@ -18,6 +18,7 @@ export interface AnimationData {
   /** Named timeline markers → tick. */
   markers?: Record<string, number>;
   /** Baked bone tracks: one [x, y, z] (model space, blocks) per tick. */
+  /** Baked bone pivots: one [x, y, z] per tick (entity space, blocks; +Z forward, +X left, +Y up). */
   bones?: Record<string, [number, number, number][]>;
   unbakeable?: string[];
 }
@@ -50,6 +51,11 @@ export interface SkillLine {
   chance?: number;
   /** Child lines run in order (delays pause the sequence). */
   c?: SkillLine[];
+  /**
+   * Run this line N ticks later WITHOUT pausing the sequence
+   * (MythicMobs per-mechanic `delay=` option).
+   */
+  delay?: number;
 }
 
 export interface SkillDef extends SkillLine {
@@ -78,6 +84,8 @@ export interface BossConfig {
   display?: { name?: string; bossBar?: boolean };
   stats?: { health?: number; armor?: number; knockbackResist?: number; scale?: number };
   animations?: Record<string, AnimationData>;
+  /** Baked bone/point positions in the model's rest pose (converter output), used when no baked animation plays. */
+  restPose?: Record<string, [number, number, number]>;
   ai?: {
     default?: AiMode;
     targetRange?: number;
@@ -92,8 +100,24 @@ export interface BossConfig {
   drops?: { item: string; amount?: number | [number, number]; chance?: number }[];
   /** Mechanic names this boss relies on; checked at startup. */
   requires?: string[];
-  /** Global cooldown applied after any skill, in ticks. */
+  /** Global cooldown applied after any exclusive skill, in ticks. */
   gcd?: number;
+  /**
+   * Incoming damage multipliers by Bedrock damage cause (MythicMobs DamageModifiers).
+   * 0 = immune, 0.25 = 75% reduction, negative = heals by that fraction.
+   */
+  damageModifiers?: Record<string, number>;
+  /**
+   * Custom death handled by the entity JSON (e.g. a fatal damage_sensor that
+   * plays a death animation then despawns). The framework treats this entity
+   * event as the boss's death.
+   */
+  death?: { event?: string };
+  /**
+   * Client base-layer animations, selectable at runtime via the `baseState`
+   * mechanic. Index in each list = value of entity property mb:idle_state / mb:walk_state.
+   */
+  baseStates?: { idle?: string[]; walk?: string[] };
 }
 
 // ---------------------------------------------------------------------------
@@ -112,6 +136,8 @@ export interface SkillContext {
   trigger: Entity | undefined;
   targets: Target[];
   data: unknown;
+  /** Targets passed down by a parent skill (`skill`/`randomSkill`/`aura`/`hitbox`). */
+  inherited: Target[] | undefined;
   vars: Record<string, unknown>;
   token: import("../core/Scheduler.js").CancelToken;
   services: import("../core/services.js").Services;

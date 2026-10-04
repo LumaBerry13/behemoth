@@ -77,6 +77,23 @@ export const Adapter = {
         cb(e.hurtEntity, e.damageSource.damagingEntity, e.damage, e.damageSource.cause)
       );
     },
+    /**
+     * Before-event: the callback may cancel or rescale damage. It runs in a
+     * restricted context, so it must not change the world (L19).
+     * @param {(hurt: Entity, damage: number, cause: string) => ({ cancel?: boolean, damage?: number } | void)} cb
+     */
+    onEntityHurtBefore(cb) {
+      world.beforeEvents.entityHurt.subscribe((e) => {
+        const r = cb(e.hurtEntity, e.damage, e.damageSource.cause);
+        if (!r) return;
+        if (r.cancel) e.cancel = true;
+        else if (r.damage !== undefined) e.damage = r.damage;
+      });
+    },
+    /** Entity JSON event fired (e.g. a custom death event). @param {(entity: Entity, eventId: string) => void} cb */
+    onDataDrivenTrigger(cb) {
+      world.afterEvents.dataDrivenEntityTrigger.subscribe((e) => cb(e.entity, e.eventId));
+    },
     /** @param {(dead: Entity, killer: Entity | undefined, cause: string) => void} cb */
     onEntityDie(cb) {
       world.afterEvents.entityDie.subscribe((e) =>
@@ -271,6 +288,28 @@ export const Adapter = {
     }
   },
 
+  /** Block type id at a location, or "" if unloaded. @param {Dimension} dim @param {Vector3} loc */
+  getBlockTypeId(dim, loc) {
+    try {
+      return dim.getBlock(loc)?.typeId ?? "";
+    } catch {
+      return "";
+    }
+  },
+
+  /**
+   * Y of the first walkable surface at or below `loc` (for on-surface summons).
+   * @param {Dimension} dim @param {Vector3} loc
+   */
+  surfaceY(dim, loc) {
+    try {
+      const block = dim.getBlockBelow({ x: loc.x, y: loc.y + 1, z: loc.z });
+      return block ? block.location.y + 1 : loc.y;
+    } catch {
+      return loc.y;
+    }
+  },
+
   /** @param {Dimension} dim @param {string} sound @param {Vector3} loc @param {number} [volume] @param {number} [pitch] */
   playSound(dim, sound, loc, volume = 1, pitch = 1) {
     try {
@@ -319,6 +358,32 @@ export const Adapter = {
   /** @param {Entity} e */
   clearVelocity(e) {
     if (e.isValid) e.clearVelocity();
+  },
+  /** @param {Entity} e */
+  getVelocity(e) {
+    return e.isValid ? e.getVelocity() : { x: 0, y: 0, z: 0 };
+  },
+  /**
+   * Movement speed as a multiple of the entity JSON value (0 = can't walk). L7.
+   * [VERIFY] defaultValue is the value from the active minecraft:movement component.
+   * @param {Entity} e @param {number} multiplier
+   */
+  setMovementMultiplier(e, multiplier) {
+    const m = e.isValid ? e.getComponent("minecraft:movement") : undefined;
+    if (m) m.setCurrentValue(Math.max(0, m.defaultValue * multiplier));
+  },
+  /**
+   * Put the player's shield on cooldown (MythicMobs shieldbreak).
+   * [VERIFY] "shield" is the cooldown category used by the vanilla shield.
+   * @param {Player} p @param {number} ticks
+   */
+  shieldCooldown(p, ticks) {
+    if (!p.isValid) return;
+    try {
+      p.startItemCooldown("shield", ticks);
+    } catch {
+      /* unknown category */
+    }
   },
   /** @param {Entity} e @param {Vector3} loc @param {Vector3} [facing] */
   teleport(e, loc, facing) {
@@ -389,6 +454,10 @@ export const Adapter = {
   /** @param {Entity} e @param {string} tag */
   addTag(e, tag) {
     if (e.isValid) e.addTag(tag);
+  },
+  /** @param {Entity} e @param {string} tag */
+  removeTag(e, tag) {
+    if (e.isValid) e.removeTag(tag);
   },
   /** @param {Entity} e @param {string} tag */
   hasTag(e, tag) {

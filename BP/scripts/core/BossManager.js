@@ -23,6 +23,8 @@ export class BossManager {
     this.configs = new Map();
     /** @type {Map<string, BossInstance>} entity id → instance */
     this.instances = new Map();
+    /** @type {Map<string, number>} summoned entity id → framework tick to remove it */
+    this.temporaries = new Map();
   }
 
   /** Called from bosses/index.js, one line per boss. @param {import("../types/config").BossConfig} config */
@@ -53,9 +55,23 @@ export class BossManager {
     ev.onEntitySpawn((entity) => this.attach(entity));
     ev.onEntityLoad((entity) => this.attach(entity));
 
+    // MythicMobs DamageModifiers. Runs in a before-event: no world writes here.
+    ev.onEntityHurtBefore((hurt, damage, cause) => {
+      const boss = this.instances.get(hurt.id);
+      const mod = boss?.config.damageModifiers?.[cause];
+      if (mod === undefined || boss.dead) return;
+      if (mod > 0) return { damage: damage * mod };
+      if (mod < 0) {
+        const heal = damage * -mod;
+        Adapter.run(() => Adapter.setHealth(hurt, Adapter.getHealth(hurt).current + heal));
+      }
+      return { cancel: true };
+    });
+
     ev.onEntityHurt((hurt, damager, damage, cause) => {
       const boss = this.instances.get(hurt.id);
       if (!boss || boss.dead) return;
+      if (damager) boss.lastAttacker = damager;
       if (damager && Adapter.isPlayer(damager)) boss.threat.add(damager, damage);
       bus.emit("damaged", { boss, triggerEntity: damager, data: { damage, cause } });
       boss.checkHealthPhase();
@@ -71,6 +87,12 @@ export class BossManager {
       if (boss) this.handleDeath(boss, killer, cause);
       // Players leave every threat table when they die.
       if (Adapter.isPlayer(dead)) for (const b of this.instances.values()) b.threat.drop(dead.id);
+    });
+
+    // Custom death driven by the entity JSON (fatal damage_sensor → death animation → despawn).
+    ev.onDataDrivenTrigger((entity, eventId) => {
+      const boss = this.instances.get(entity.id);
+      if (boss && boss.config.death?.event === eventId) this.handleDeath(boss, boss.lastAttacker, "custom");
     });
 
     ev.onPlayerInteractWithEntity((player, target) => {
@@ -92,7 +114,7 @@ export class BossManager {
   attach(entity) {
     if (!entity.isValid || this.instances.has(entity.id)) return this.instances.get(entity.id);
     const compiled = this.configs.get(entity.typeId);
-    if (!compiled) return undefined;
+    if (!compiled || Persistence.isDead(entity)) return undefined;
 
     const boss = new BossInstance(entity, compiled, this.services);
     const now = this.services.scheduler.tick;
@@ -106,6 +128,7 @@ export class BossManager {
       // (frozen AI, invulnerability) instead of resuming stuck in it.
       boss.setAiMode(compiled.config.ai?.default ?? "chase");
       boss.setInvulnerable(false);
+      boss.setSpeed(boss.speedMult);
       boss.applyDisplay();
       Log.debug(`resumed ${entity.typeId} (${entity.id}) in phase ${boss.phase}`);
       return boss;
@@ -139,6 +162,7 @@ export class BossManager {
 
   /** @private @param {number} tick */
   tickAll(tick) {
+    if (tick % 10 === 0) this.sweepTemporaries(tick);
     for (const [id, boss] of this.instances) {
       if (!boss.entity.isValid) {
         // Unloaded (chunk) or removed: drop the in-memory instance. It is
@@ -165,6 +189,14 @@ export class BossManager {
     boss.dead = true;
     boss.cancelAll();
     this.instances.delete(boss.id);
+    if (boss.entity.isValid) {
+      // Custom-death bosses stay in the world while their death animation plays:
+      // stop AI and movement, and make sure a reload never re-arms them.
+      Persistence.markDead(boss.entity);
+      boss.facingLocked = true;
+      boss.setSpeed(0);
+      boss.setAiMode("frozen");
+    }
     this.services.bus.emit("death", { boss, triggerEntity: killer, data: { cause } });
     this.spawnDrops(boss);
     this.services.scheduler.after(DEATH_LINGER_TICKS, () => boss.destroy());
@@ -179,6 +211,24 @@ export class BossManager {
       if (!Random.chance(d.chance ?? 1)) continue;
       const amount = Array.isArray(d.amount) ? Random.int(d.amount[0], d.amount[1]) : (d.amount ?? 1);
       if (amount > 0 && !Adapter.spawnItem(dim, d.item, amount, loc)) Log.warn(`drop "${d.item}" failed to spawn`);
+    }
+  }
+
+  /**
+   * Remove a summoned entity after `ticks` (framework-wide, survives the boss's death).
+   * @param {Entity} entity @param {number} ticks
+   */
+  trackTemporary(entity, ticks) {
+    this.temporaries.set(entity.id, this.services.scheduler.tick + ticks);
+  }
+
+  /** @private @param {number} tick */
+  sweepTemporaries(tick) {
+    for (const [id, until] of this.temporaries) {
+      if (until > tick) continue;
+      this.temporaries.delete(id);
+      const e = Adapter.getEntity(id);
+      if (e) Adapter.remove(e);
     }
   }
 

@@ -1,10 +1,10 @@
 # Mythic Bedrock — Design & Project Documentation
 
-Oct 3, 2026 · @Nitesh Mali
+Oct 4, 2026 · @Nitesh Mali
 
 ## 1. Summary and how to use this document
 
-Mythic Bedrock is a JavaScript framework, built on the Minecraft Bedrock Script API, that recreates the MythicMobs + ModelEngine boss workflow on Bedrock. A boss is defined by one JS config file; skills, triggers, targeters and conditions are plug-in modules registered in manager files. Status: research and design phase complete, no code written yet.
+Mythic Bedrock is a JavaScript framework, built on the Minecraft Bedrock Script API, that recreates the MythicMobs + ModelEngine boss workflow on Bedrock. A boss is defined by one JS config file; skills, triggers, targeters and conditions are plug-in modules registered in manager files. Status (Oct 4, 2026): M1 core runtime done and tested in-game with a test boss; first real boss (Dark Knight) converted with the M2 converter and awaiting in-game test.
 
 This document is the single source of truth for the project. It is written so that a human or an AI assistant (Claude chat or Claude Code) with no prior context can understand the design and continue the work.
 
@@ -99,6 +99,9 @@ The Script API can run all of MythicMobs' logic, but it cannot change an entity 
 | L21 | Segmented bodies, bone mounts, real multi-part hitboxes. | Out of scope; redesign such bosses. | Not possible |
 | L22 | UI limited to `@minecraft/server-ui` forms. | Use titles, action bar, boss bar; JSON UI only if ever essential. | Accepted |
 | L23 | `mb:anim_speed` speeds up the client animation, but server-side lengths, markers and baked tracks stay at speed 1. | Do not change anim speed mid-fight until the runtime scales `startTick`/markers by the speed factor. | Open |
+| L24 | ModelEngine `@modelpart` can name parts that do not exist as Bedrock bones (e.g. `stones_modelpart`). | Converter `bone_aliases` maps them to a real bone; otherwise falls back to the boss position + offset and reports it. | Approximated |
+| L25 | Bosses with a scripted death (fatal `damage_sensor` → death animation → despawn) never fire `entityDie`. | Converter detects the death event; the framework treats that `dataDrivenEntityTrigger` as death (onDeath skills, drops, AI frozen, `mb:dead` flag so reloads never re-arm it). | Solved by design |
+| L26 | MythicMobs custom sounds need RP `sound_definitions` + sound files that purchased packs ship separately. | Converter `sounds` map; vanilla placeholders until the real sounds are added. | Accepted |
 
 ### API notes (all \[VERIFY\] before use)
 
@@ -152,6 +155,7 @@ Script contexts are per behavior pack, so the framework cannot import JS from an
 - **Framework RP:** shared particle library (rings, sparks, smoke, coloured dust, all driven by Molang variables), render-controller templates, shared sounds.
 - **Boss BP + RP (per boss, or merged into the framework packs):** entity JSON with the Mythic-ready stub, model, textures, animations.
 - **Alternative:** boss packs send data-only configs to the framework via `system.sendScriptEvent`. Keeps packs separate but forbids functions in configs.
+- **Licensed bosses (implemented):** converted bosses are never committed. The converter writes BP/RP overlays to the git-ignored `private/build/`; `bosses/index.js` imports a committed empty stub `bosses/private/index.js`, which `npm run deploy` replaces with the generated one in the game folder.
 
 ### Planned source tree
 
@@ -221,6 +225,7 @@ Movement can also be paused without a group swap by setting the movement attribu
 | `mb:visibility` | int or several bools | Part visibility via render controller `part_visibility`. |
 | `mb:anim_speed` | float | Animation speed via `anim_time_update` in RP animations. |
 | `mb:state` | enum | Optional, for client-side looping states. |
+| `mb:idle_state` / `mb:walk_state` | int | Which idle/walk animation the generated base controller loops (ModelEngine `defaultstate`). Index into config `baseStates`. |
 
 There are engine limits on property count per entity type and enum values per property \[VERIFY\]. Keep the set small and shared across bosses.
 
@@ -602,7 +607,7 @@ The first four decisions shape the architecture and must be settled in M0, befor
 - [ ] **D2 API version:** which `@minecraft/server` stable version to pin, and the `min_engine_version`. *Provisional (2026-10-03): `@minecraft/server` 2.10.0 (latest stable on npm), `min_engine_version` 1.26.50 \[VERIFY against the owner's game version\].*
 - [ ] **D3 Execution rules:** confirm or change the defaults in section 7 (concurrency, casting lock, interruption, cancellation).
 - [ ] **D4 Licensing:** check the licence of each purchased MythicMobs / ModelEngine pack. Most allow personal server use but forbid redistribution or porting. Personal conversion ≠ public release.
-- [ ] **D5 Bone tagging:** `mb_` naming convention in Blockbench, or bone list in config.
+- [ ] **D5 Bone tagging:** `mb_` naming convention in Blockbench, or bone list in config. *Provisional (2026-10-04): no tagging — the converter bakes exactly the bones the MythicMobs YAML references via `@modelpart` (plus `bone_aliases`).*
 - [ ] **D6 Boss family / Peaceful handling.**
 - [ ] **D7 Player-count scaling and drop distribution.**
 - [ ] **D8 CPU budget per boss per tick** (after MVP profiling).
@@ -621,7 +626,7 @@ The first four decisions shape the architecture and must be settled in M0, befor
 - [x] Custom command registration API name. `system.beforeEvents.startup` → `customCommandRegistry.registerCommand(def, cb)` / `registerEnum`.
 - [x] Biome and light-level query APIs. `Dimension.getBiome`, `getLightLevel`, `getSkyLightLevel`.
 - [ ] Persistence component name.
-- [ ] Coordinate conventions: X mirroring, Euler order, `getRotation().y` vs rendered body yaw.
+- [ ] Coordinate conventions: X mirroring, Euler order, `getRotation().y` vs rendered body yaw. Converter assumes Blockbench's import rules (raw frame R = Rz(-rz)·Ry(ry)·Rx(-rx), model facing -Z) and outputs entity space (+Z forward). Confirm with `/mb:bones` and the hitbox debug particles.
 - [ ] Script profiling support.
 
 ## 16. Future companion frameworks

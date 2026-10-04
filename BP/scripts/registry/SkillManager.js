@@ -89,6 +89,19 @@ import message from "../modules/mechanics/message.js";
 import waitMarker from "../modules/mechanics/wait_marker.js";
 import skillMechanic from "../modules/mechanics/skill.js";
 import invulnerable from "../modules/mechanics/invulnerable.js";
+import randomSkill from "../modules/mechanics/random_skill.js";
+import gcd from "../modules/mechanics/gcd.js";
+import setSpeed from "../modules/mechanics/set_speed.js";
+import baseState from "../modules/mechanics/base_state.js";
+import lockFacing from "../modules/mechanics/lock_facing.js";
+import addTag from "../modules/mechanics/add_tag.js";
+import removeTag from "../modules/mechanics/remove_tag.js";
+import aura from "../modules/mechanics/aura.js";
+import hitbox from "../modules/mechanics/hitbox.js";
+import throwMechanic from "../modules/mechanics/throw.js";
+import shieldBreak from "../modules/mechanics/shield_break.js";
+import potion from "../modules/mechanics/potion.js";
+import propel from "../modules/mechanics/propel.js";
 
 import self from "../modules/targeters/self.js";
 import target from "../modules/targeters/target.js";
@@ -98,6 +111,8 @@ import entitiesInRadius from "../modules/targeters/entities_in_radius.js";
 import nearestPlayer from "../modules/targeters/nearest_player.js";
 import selfLocation from "../modules/targeters/self_location.js";
 import targetLocation from "../modules/targeters/target_location.js";
+import bone from "../modules/targeters/bone.js";
+import forward from "../modules/targeters/forward.js";
 
 import healthPct from "../modules/conditions/health_pct.js";
 import distanceCondition from "../modules/conditions/distance.js";
@@ -105,6 +120,9 @@ import chance from "../modules/conditions/chance.js";
 import phaseCondition from "../modules/conditions/phase.js";
 import hasTarget from "../modules/conditions/has_target.js";
 import hasTag from "../modules/conditions/has_tag.js";
+import offGcd from "../modules/conditions/off_gcd.js";
+import moving from "../modules/conditions/moving.js";
+import inBlock from "../modules/conditions/in_block.js";
 
 import onSpawn from "../modules/triggers/on_spawn.js";
 import onTimer from "../modules/triggers/on_timer.js";
@@ -131,6 +149,19 @@ export function bindModules(sm) {
   sm.bind("waitMarker", waitMarker);
   sm.bind("skill", skillMechanic);
   sm.bind("invulnerable", invulnerable);
+  sm.bind("randomSkill", randomSkill);
+  sm.bind("gcd", gcd);
+  sm.bind("setSpeed", setSpeed);
+  sm.bind("baseState", baseState);
+  sm.bind("lockFacing", lockFacing);
+  sm.bind("addTag", addTag);
+  sm.bind("removeTag", removeTag);
+  sm.bind("aura", aura);
+  sm.bind("hitbox", hitbox);
+  sm.bind("throw", throwMechanic);
+  sm.bind("shieldBreak", shieldBreak);
+  sm.bind("potion", potion);
+  sm.bind("propel", propel);
 
   sm.bindTargeter("self", self);
   sm.bindTargeter("target", target);
@@ -140,6 +171,8 @@ export function bindModules(sm) {
   sm.bindTargeter("NearestPlayer", nearestPlayer);
   sm.bindTargeter("SelfLocation", selfLocation);
   sm.bindTargeter("TargetLocation", targetLocation);
+  sm.bindTargeter("Bone", bone);
+  sm.bindTargeter("Forward", forward);
 
   sm.bindCondition("healthPct", healthPct);
   sm.bindCondition("distance", distanceCondition);
@@ -147,6 +180,9 @@ export function bindModules(sm) {
   sm.bindCondition("phase", phaseCondition);
   sm.bindCondition("hasTarget", hasTarget);
   sm.bindCondition("hasTag", hasTag);
+  sm.bindCondition("offGcd", offGcd);
+  sm.bindCondition("moving", moving);
+  sm.bindCondition("inBlock", inBlock);
 
   sm.bindTrigger("onSpawn", onSpawn);
   sm.bindTrigger("onTimer", onTimer);

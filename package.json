@@ -7,6 +7,9 @@
   "scripts": {
     "check": "tsc -p tsconfig.json",
     "validate": "node tools/validate.mjs",
+    "sim": "node tools/sim/run.mjs",
+    "convert": "python converter/convert.py",
+    "test:converter": "python -m pytest converter/tests -q",
     "deploy": "node tools/deploy.mjs"
   },
   "devDependencies": {

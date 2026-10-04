@@ -5,6 +5,7 @@ import { Adapter } from "../adapter/Adapter.js";
 import { Log } from "./Logger.js";
 
 const KEY = "mb:state";
+const DEAD_KEY = "mb:dead";
 const VERSION = 1;
 
 /**
@@ -16,6 +17,8 @@ const VERSION = 1;
  *   cd: Record<string, number>,
  *   vars: Record<string, unknown>,
  *   threat?: Record<string, number>,
+ *   facing?: boolean,
+ *   speed?: number,
  * }} SavedState
  */
 
@@ -35,6 +38,8 @@ export const Persistence = {
       cd,
       vars: boss.vars,
       threat: boss.config.threat?.enabled === false ? undefined : boss.threat.serialize(),
+      facing: boss.facingLocked,
+      speed: boss.speedMult,
     };
     try {
       Adapter.setDynamic(boss.entity, KEY, JSON.stringify(state));
@@ -70,5 +75,21 @@ export const Persistence = {
     for (const [name, remaining] of Object.entries(state.cd ?? {})) boss.cooldowns.set(name, now + remaining);
     boss.vars = state.vars ?? {};
     boss.threat.restore(state.threat);
+    boss.facingLocked = !!state.facing;
+    boss.speedMult = state.speed ?? 1;
+  },
+
+  /** Mark an entity whose death is still playing out, so it is never re-armed on reload. @param {import("@minecraft/server").Entity} entity */
+  markDead(entity) {
+    try {
+      Adapter.setDynamic(entity, DEAD_KEY, true);
+    } catch {
+      /* entity already gone */
+    }
+  },
+
+  /** @param {import("@minecraft/server").Entity} entity */
+  isDead(entity) {
+    return Adapter.getDynamic(entity, DEAD_KEY) === true;
   },
 };

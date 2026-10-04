@@ -1,7 +1,10 @@
 // Runs compiled skills (design doc §7):
 // trigger → conditions → targeter → mechanic → children / delays.
 // A run walks its steps iteratively; a mechanic returning N > 0 pauses the run
-// for N ticks via the scheduler, under the run's cancel token.
+// for N ticks via the scheduler, under the run's cancel token. A line with
+// `delay: N` runs N ticks later without pausing the sequence (MythicMobs
+// per-mechanic delay). Lines without an explicit targeter use the targets
+// inherited from a parent skill, else the mechanic's default targeter.
 import { Log } from "./Logger.js";
 import { Random } from "./Random.js";
 
@@ -10,9 +13,15 @@ import { Random } from "./Random.js";
 /** @typedef {import("./Validator.js").CompiledCondition} CompiledCondition */
 /** @typedef {import("./BossInstance.js").BossInstance} BossInstance */
 /** @typedef {import("../types/config").SkillContext} SkillContext */
+/** @typedef {import("../types/config").Target} Target */
 /** @typedef {import("../types/config").TriggerEvent} TriggerEvent */
 /** @typedef {{ skill: CompiledSkill, token: import("./Scheduler.js").CancelToken, done: boolean }} SkillRun */
 /** @typedef {{ steps: CompiledStep[], i: number }} Frame */
+/**
+ * @typedef {object} CastOptions
+ * @property {boolean} [force] skip cooldown / lock / chance / conditions
+ * @property {Target[]} [inherited] targets passed from a parent skill
+ */
 
 export class SkillExecutor {
   /** @param {import("./services.js").Services} services */
@@ -49,24 +58,25 @@ export class SkillExecutor {
   }
 
   /**
-   * Cast by name (phase onEnter, `skill` mechanic, debug command).
-   * @param {BossInstance} boss @param {string} name @param {Partial<TriggerEvent>} [event] @param {boolean} [force]
+   * Cast by name (phase onEnter, `skill`/`randomSkill`/`aura`/`hitbox`, debug command).
+   * @param {BossInstance} boss @param {string} name @param {Partial<TriggerEvent>} [event]
+   * @param {CastOptions | boolean} [opts] `true` is shorthand for { force: true }
    */
-  castByName(boss, name, event = {}, force = false) {
+  castByName(boss, name, event = {}, opts = {}) {
     const skill = boss.compiled.skills.get(name);
     if (!skill) {
       Log.warn(`skill "${name}" not found on ${boss.config.id}`);
       return false;
     }
-    return this.cast(boss, skill, { ...event, boss }, force);
+    return this.cast(boss, skill, { ...event, boss }, typeof opts === "boolean" ? { force: opts } : opts);
   }
 
   /**
    * @param {BossInstance} boss @param {CompiledSkill} skill
-   * @param {Partial<TriggerEvent>} event @param {boolean} [force] skip cooldown/lock/chance/conditions
+   * @param {Partial<TriggerEvent>} event @param {CastOptions} [opts]
    * @returns {boolean} true if the skill started
    */
-  cast(boss, skill, event, force = false) {
+  cast(boss, skill, event, opts = {}) {
     if (boss.destroyed) return false;
     const now = this.services.scheduler.tick;
     /** @type {SkillContext} */
@@ -79,9 +89,10 @@ export class SkillExecutor {
       vars: boss.vars,
       token: boss.token, // replaced by the run token below
       services: this.services,
+      inherited: opts.inherited,
     };
 
-    if (!force) {
+    if (!opts.force) {
       if ((boss.cooldowns.get(skill.name) ?? 0) > now) return false;
       // Exclusive skills respect the casting lock and the global cooldown.
       if (skill.exclusive && (boss.isCastLocked(now) || boss.gcdUntil > now)) return false;
@@ -95,7 +106,7 @@ export class SkillExecutor {
     if (skill.cooldown) boss.cooldowns.set(skill.name, now + skill.cooldown);
     if (skill.exclusive) {
       boss.castLock = run;
-      boss.gcdUntil = now + (boss.config.gcd ?? 0);
+      boss.gcdUntil = Math.max(boss.gcdUntil, now + (boss.config.gcd ?? 0));
     }
     boss.runs.add(run);
     Log.debug(`${boss.config.id} casts "${skill.name}"`);
@@ -124,23 +135,16 @@ export class SkillExecutor {
       }
       if (!step.mechanic) continue;
 
-      let targets = [];
-      try {
-        targets = step.targeter ? step.targeter.module.resolve(ctx, step.targeter.options) : [];
-      } catch (e) {
-        Log.error(`targeter @${step.targeter?.name} failed in "${run.skill.name}":`, e);
+      if (step.delay > 0) {
+        // Non-blocking: the sequence carries on; this line fires later.
+        this.services.scheduler.after(step.delay, () => {
+          if (!boss.destroyed) this.execStep(ctx, run, step);
+        }, run.token);
         continue;
       }
-      ctx.targets = targets;
 
-      let delay;
-      try {
-        delay = step.mechanic.execute(ctx, targets, step.options);
-      } catch (e) {
-        Log.error(`mechanic "${step.name}" failed in "${run.skill.name}":`, e);
-        continue;
-      }
-      if (typeof delay === "number" && delay > 0) {
+      const delay = this.execStep(ctx, run, step);
+      if (delay > 0) {
         this.services.scheduler.after(delay, () => this.runSteps(ctx, run, stack), run.token);
         return;
       }
@@ -149,8 +153,35 @@ export class SkillExecutor {
   }
 
   /**
+   * Resolve targets and execute one mechanic line.
+   * @param {SkillContext} ctx @param {SkillRun} run @param {CompiledStep} step
+   * @returns {number} ticks to pause the sequence (0 = continue)
+   */
+  execStep(ctx, run, step) {
+    /** @type {Target[]} */
+    let targets = [];
+    try {
+      if (!step.explicitTargeter && ctx.inherited) targets = ctx.inherited.filter(isAlive);
+      else if (step.targeter) targets = step.targeter.module.resolve(ctx, step.targeter.options);
+    } catch (e) {
+      Log.error(`targeter @${step.targeter?.name} failed in "${run.skill.name}":`, e);
+      return 0;
+    }
+    // Like MythicMobs: an explicit targeter that finds nothing skips the mechanic.
+    if (step.explicitTargeter && targets.length === 0) return 0;
+    ctx.targets = targets;
+    try {
+      const delay = step.mechanic.execute(ctx, targets, step.options);
+      return typeof delay === "number" && delay > 0 ? delay : 0;
+    } catch (e) {
+      Log.error(`mechanic "${step.name}" failed in "${run.skill.name}":`, e);
+      return 0;
+    }
+  }
+
+  /**
    * @param {SkillContext} ctx @param {CompiledCondition[]} conditions
-   * @param {import("../types/config").Target} [target] defaults to the caster
+   * @param {Target} [target] defaults to the caster
    */
   checkConditions(ctx, conditions, target = ctx.caster) {
     for (const c of conditions) {
@@ -183,4 +214,9 @@ export class SkillExecutor {
     run.token.cancel();
     this.finish(boss, run);
   }
+}
+
+/** Locations are always usable; entities only while valid. @param {Target} t */
+function isAlive(t) {
+  return !("isValid" in t) || t.isValid;
 }

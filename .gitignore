@@ -1,5 +1,5 @@
 # Purchased / licensed source assets (MythicMobs, ModelEngine packs) — never commit (D4)
-private/
+/private/
 
 # Node / TypeScript
 node_modules/

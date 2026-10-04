@@ -16,6 +16,8 @@ import { parseTargeter, parseCondition, parseTrigger } from "./SkillParser.js";
  *   name: string,
  *   options: Record<string, any>,
  *   targeter: CompiledTargeter | null,
+ *   explicitTargeter: boolean,
+ *   delay: number,
  *   conditions: CompiledCondition[],
  *   chance: number,
  *   children: CompiledStep[] | null,
@@ -123,7 +125,7 @@ export class Validator {
     const vctx = { config, skillName: name };
     /** @type {CompiledStep[]} */
     let steps;
-    if (def.m) steps = [this.compileStep({ m: def.m, o: def.o, t: def.t }, vctx, errors, "")];
+    if (def.m) steps = [this.compileStep({ m: def.m, o: def.o, t: def.t, delay: def.delay }, vctx, errors, "")];
     else if (Array.isArray(def.c)) steps = def.c.map((line, i) => this.compileStep(line, vctx, errors, `c[${i}]`));
     else {
       errors.push("skill needs either `m` (single mechanic) or `c` (child lines)");
@@ -155,6 +157,8 @@ export class Validator {
       name: line?.m ?? "<group>",
       options: line?.o ?? {},
       targeter: null,
+      explicitTargeter: line?.t !== undefined,
+      delay: this.ticks(line?.delay, `${at}delay`, errors),
       conditions: this.compileConditions(line?.if, errors, at),
       chance: this.chance(line?.chance, errors, at),
       children: null,
@@ -166,6 +170,7 @@ export class Validator {
     if (line.m && line.c) errors.push(`${at}a line has either \`m\` or \`c\`, not both`);
 
     if (line.c) {
+      if (step.delay) errors.push(`${at}\`delay\` is not supported on a group of child lines`);
       if (!Array.isArray(line.c)) errors.push(`${at}\`c\` must be an array`);
       else step.children = line.c.map((l, i) => this.compileStep(l, vctx, errors, `${path}.c[${i}]`));
       return step;

@@ -4,7 +4,7 @@ A boss framework for **Minecraft Bedrock Edition**, built on the Script API (`@m
 
 A boss is one JavaScript config file. Mechanics, targeters, conditions and triggers are plug-in modules, so new behaviour is added as a new module, not by changing the core.
 
-> **Status:** early development (milestone M1). The core runtime and a first set of modules work in-game with a test boss. The converter tool is not started yet, and no real boss has been ported.
+> **Status:** early development (milestone M2). The core runtime works in-game with a test boss. The Python converter turns a MythicMobs + ModelEngine boss into a Mythic Bedrock boss; the first real boss is converted and in testing.
 
 ## Features
 
@@ -22,9 +22,9 @@ A boss is one JavaScript config file. Mechanics, targeters, conditions and trigg
 
 | Kind | Modules |
 | --- | --- |
-| Mechanics | `state`, `damage`, `leap`, `particle`, `particleRing`, `sound`, `delay`, `setAI`, `summon`, `phase`, `message`, `waitMarker`, `skill`, `invulnerable` |
-| Targeters | `@self`, `@target`, `@trigger`, `@PlayersInRadius`, `@EntitiesInRadius`, `@NearestPlayer`, `@SelfLocation`, `@TargetLocation` |
-| Conditions | `healthPct`, `distance`, `chance`, `phase`, `hasTarget`, `hasTag` (any can be negated with `!`) |
+| Mechanics | `state`, `damage`, `leap`, `particle`, `particleRing`, `sound`, `delay`, `setAI`, `summon`, `phase`, `message`, `waitMarker`, `skill`, `randomSkill`, `invulnerable`, `gcd`, `setSpeed`, `baseState`, `lockFacing`, `addTag`, `removeTag`, `aura`, `hitbox`, `throw`, `shieldBreak`, `potion`, `propel` |
+| Targeters | `@self`, `@target`, `@trigger`, `@PlayersInRadius`, `@EntitiesInRadius`, `@NearestPlayer`, `@SelfLocation`, `@TargetLocation`, `@Bone`, `@Forward` |
+| Conditions | `healthPct`, `distance`, `chance`, `phase`, `hasTarget`, `hasTag`, `offGcd`, `moving`, `inBlock` (any can be negated with `!`) |
 | Triggers | `onSpawn`, `onTimer:N`, `onDamaged`, `onDeath`, `onAttack`, `onPhase:N`, `animEnd`, `onMarker:name` |
 
 ## Requirements
@@ -68,7 +68,10 @@ Then:
 | --- | --- |
 | `npm run check` | Type-checks every script against the pinned `@minecraft/server` typings. Catches misspelled or non-existent API names. |
 | `npm run validate` | Runs the framework's real config validator in Node, without the game. |
-| `npm run deploy` | Copies the packs into the game's development pack folders. |
+| `npm run sim -- <boss id> [ticks] [--hit N] [--debug]` | Runs the real framework headless against a stub of the Script API and prints what each skill did. Catches runtime errors before an in-game test. |
+| `npm run convert -- --job <job.json>` | Converts a MythicMobs + ModelEngine boss (see below). |
+| `npm run test:converter` | Runs the converter's Python unit tests. |
+| `npm run deploy` | Copies the packs into the game's development pack folders, plus any converted bosses from `private/build`. |
 
 ## Writing a boss
 
@@ -122,6 +125,22 @@ The full schema is typed in [`BP/scripts/types/config.d.ts`](BP/scripts/types/co
 
 A script can only toggle components and properties that the entity JSON already defines. So every boss entity needs the standard **Mythic-ready stub**: the `mb:idle`, `mb:chase`, `mb:frozen`, `mb:invulnerable` and `mb:despawn` component groups and their events, plus the `mb:phase`, `mb:visibility` and `mb:anim_speed` properties. See [`BP/entities/test_boss.json`](BP/entities/test_boss.json) for a working example.
 
+## Converting a MythicMobs boss
+
+The converter (`converter/`, Python 3.10+) needs `pip install -r converter/requirements.txt`.
+
+1. Put the boss's files in the git-ignored `private/` folder: behavior and client entity JSON, `.geo.json`, `.animation.json`, animation controllers, texture, and the MythicMobs mob and skill YAML.
+2. Write a small job file, `private/<boss>.job.json`, that names those files. It can also map things Bedrock doesn't have: summoned MythicMobs mobs → Bedrock entity ids, custom sounds → sound events, and ModelEngine parts that aren't real bones → bone aliases. The format is documented at the top of [`converter/mbconv/cli.py`](converter/mbconv/cli.py).
+3. Run `npm run convert -- --job private/<boss>.job.json`, then read `private/build/<boss>.report.md`. It lists everything that was skipped or approximated.
+4. Run `npm run validate`, `npm run sim -- <entity id>`, then `npm run deploy`.
+
+The converter:
+- **Translates the YAML** into a boss config: mob skill lines, the metaskills they can reach, conditions, cooldowns and damage modifiers.
+- **Bakes bone tracks**, one position per tick, for every bone the skills target through `@modelpart`.
+- **Patches the entity files:** adds the Mythic-ready stub to the behavior entity, and adds an idle/walk base animation controller to the client entity.
+
+Its output goes to `private/build/`, which is never committed. `npm run deploy` overlays it on the public packs, so licensed content stays out of the repository.
+
 ## Adding a module
 
 1. Create a file under `BP/scripts/modules/<mechanics|targeters|conditions|triggers>/`.
@@ -162,15 +181,17 @@ BP/                     behavior pack
     types/              config schema (.d.ts)
     debug/              debug commands and overlay
 RP/                     resource pack (client entity, animations, text)
-tools/                  validate.mjs, deploy.mjs
+converter/              Python converter (MythicMobs YAML + Bedrock model → boss) and tests
+tools/                  validate.mjs, deploy.mjs, sim/ (headless simulator)
+private/                git-ignored: licensed boss sources and converter output
 ```
 
 ## Roadmap
 
 | Milestone | Scope |
 | --- | --- |
-| M1 (current) | Core runtime, validator, persistence, debug tools |
-| M2 | First real boss, minimal converter, bone-position calibration |
+| M1 (done) | Core runtime, validator, persistence, debug tools |
+| M2 (current) | First real boss, converter, bone-position calibration |
 | M3 | Full Python converter: bakes bone tracks, extracts markers, generates the entity patch and a config skeleton |
 | M4 | Remaining v1 modules, bone hit-spheres, reset and leash logic, shared particle library |
 | M5 | 2–3 purchased bosses converted end to end, then tag v1 |

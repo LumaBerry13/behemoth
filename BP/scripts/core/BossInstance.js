@@ -50,6 +50,14 @@ export class BossInstance {
     this.threat = new ThreatTable();
     /** @type {Set<string>} ids of summoned entities */
     this.summons = new Set();
+    /** While true the boss does not turn toward its target (MythicMobs lockmodel). */
+    this.facingLocked = false;
+    /** Movement speed multiplier applied to the entity's base movement. */
+    this.speedMult = 1;
+    /** @type {Map<string, Map<string, number>>} hitbox key → entity id → tick it can be hit again */
+    this.hitCooldowns = new Map();
+    /** @type {Entity | undefined} last entity that damaged the boss */
+    this.lastAttacker = undefined;
 
     this.age = 0;
     this.spawnPoint = Adapter.location(entity.location);
@@ -138,7 +146,7 @@ export class BossInstance {
    * while walking, so the framework owns facing (config ai.faceTarget, default on).
    */
   faceTarget() {
-    if (this.config.ai?.faceTarget === false) return;
+    if (this.facingLocked || this.config.ai?.faceTarget === false) return;
     const t = this.getTarget();
     if (t) Adapter.lookAt(this.entity, Adapter.getHeadLocation(t));
   }
@@ -162,6 +170,25 @@ export class BossInstance {
   /** @param {boolean} on */
   setInvulnerable(on) {
     Adapter.triggerEvent(this.entity, on ? "mb:invuln_on" : "mb:invuln_off");
+  }
+
+  /** Movement speed as a multiple of the entity's base speed (0 = rooted). @param {number} mult */
+  setSpeed(mult) {
+    this.speedMult = mult;
+    Adapter.setMovementMultiplier(this.entity, mult);
+  }
+
+  /**
+   * Select the client base-layer animation (idle or walk) by animation key,
+   * using config.baseStates and the mb:idle_state / mb:walk_state properties.
+   * @param {"idle" | "walk"} type @param {string} anim
+   * @returns {boolean} false if the animation is not in config.baseStates[type]
+   */
+  setBaseState(type, anim) {
+    const idx = this.config.baseStates?.[type]?.indexOf(anim) ?? -1;
+    if (idx < 0) return false;
+    Adapter.setProperty(this.entity, `mb:${type}_state`, idx);
+    return true;
   }
 
   // -------------------------------------------------------------------------
@@ -253,15 +280,20 @@ export class BossInstance {
   }
 
   /**
-   * World position of a baked bone at the current tick (design doc §6 runtime lookup).
+   * World position of a baked bone pivot at the current tick (design doc §6
+   * runtime lookup). Falls back to the rest pose when the current animation has
+   * no track for it (e.g. idle/walk, which play client-side).
    * @param {string} bone
    * @returns {Vector3 | undefined}
    */
   getBonePosition(bone) {
     const track = this.anim?.data.bones?.[bone];
-    if (!track?.length) return undefined;
-    const t = Math.max(0, Math.min(this.animTick(), track.length - 1));
-    const [x, y, z] = track[t];
+    /** @type {[number, number, number] | undefined} */
+    let p;
+    if (track?.length) p = track[Math.max(0, Math.min(this.animTick(), track.length - 1))];
+    else p = this.config.restPose?.[bone]; // no (baked) action animation playing
+    if (!p) return undefined;
+    const [x, y, z] = p;
     const s = this.config.stats?.scale ?? 1;
     const r = rotateYaw({ x: x * s, y: y * s, z: z * s }, Adapter.getYaw(this.entity));
     const l = this.location;
