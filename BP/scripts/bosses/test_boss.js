@@ -7,7 +7,7 @@ export default {
   schemaVersion: 1,
   id: "mb:test_boss",
   display: { name: "§cTest Boss", bossBar: true },
-  stats: { health: 300, knockbackResist: 1, scale: 1.5 },
+  stats: { health: 300, knockbackResist: 1, scale: 1.5, movementSpeed: 0.25 },
   animations: anims,
   ai: { default: "chase", targetRange: 32 },
   threat: { enabled: true },

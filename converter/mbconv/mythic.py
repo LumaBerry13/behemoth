@@ -170,6 +170,7 @@ class Context:
     mob_types: dict[str, dict[str, Any]]
     sounds: dict[str, str]
     bone_aliases: dict[str, str]
+    blades: set[str] = field(default_factory=set)  # bones whose hits use a hilt->tip capsule
     notes: list[str] = field(default_factory=list)
     used_mechanics: set[str] = field(default_factory=set)
     used_bones: set[str] = field(default_factory=set)
@@ -211,7 +212,11 @@ def _fmt_opts(o: dict[str, Any]) -> str:
     return "{" + ";".join(parts) + "}" if parts else ""
 
 
-def translate_targeter(t: tuple[str, dict[str, Any]] | None, ctx: Context, where: str) -> str | None:
+def blade_tip(bone: str) -> str:
+    return f"{bone}_tip"
+
+
+def translate_targeter(t: tuple[str, dict[str, Any]] | None, ctx: Context, where: str, mech: str = "") -> str | None:
     if t is None:
         return None
     name, o = t[0].lower(), t[1]
@@ -232,6 +237,13 @@ def translate_targeter(t: tuple[str, dict[str, Any]] | None, ctx: Context, where
             ctx.used_bones.add(bone)
             if pid != bone:
                 ctx.note(where, f"@modelpart '{pid}' is not in the Bedrock geometry; using alias bone '{bone}'")
+            if bone in ctx.blades:
+                # The weapon geometry defines where it hits: totems become a hilt->tip
+                # capsule, anything else (e.g. summons) lands at the tip.
+                ctx.used_bones.add(blade_tip(bone))
+                if off:
+                    ctx.note(where, f"@modelpart offsets {off} dropped: '{bone}' is a blade (hits follow the blade)")
+                return f"@Bone{_fmt_opts({'bone': bone if mech == 'totem' else blade_tip(bone)})}"
             return f"@Bone{_fmt_opts({'bone': bone, **off})}"
         ctx.note(where, f"@modelpart '{pid}' is not in the Bedrock geometry; using the boss position instead")
         return f"@SelfLocation{_fmt_opts(off)}"
@@ -420,9 +432,12 @@ def translate_line(sl: SkillLine, ctx: Context, where: str) -> dict[str, Any] | 
         return None
 
     ctx.used_mechanics.add(line["m"])
-    t = translate_targeter(sl.targeter, ctx, where)
+    t = translate_targeter(sl.targeter, ctx, where, n)
     if t:
         line["t"] = t
+        bone = re.match(r"@Bone\{bone=([^;}]+)", t)
+        if n == "totem" and bone and bone.group(1) in ctx.blades:
+            line["o"]["to"] = blade_tip(bone.group(1))
     if "delay" in o and n != "delay":
         line["delay"] = _ticks(o["delay"])
     for k in ("repeat", "r", "repeatinterval", "ri"):

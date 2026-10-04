@@ -65,3 +65,18 @@ def test_unbakeable_molang_is_reported():
     anim = {"animation_length": 0.1, "bones": {"shoulder": {"rotation": ["q.target_x_rotation", 0, 0]}}}
     res = bake_animation(skel(), anim, ["hand"])
     assert res.unbakeable == ["shoulder"]
+
+
+def test_blade_tip_point_is_baked_through_the_bone():
+    g = {"minecraft:geometry": [{"description": {"identifier": "g"}, "bones": [
+        {"name": "root", "pivot": [0, 0, 0]},
+        {"name": "sword", "parent": "root", "pivot": [0, 16, 0], "rotation": [90, 0, 0],
+         "cubes": [{"origin": [-1, 16, -1], "size": [2, 32, 2]}]},
+    ]}]}
+    s = Skeleton.from_geo(g)
+    tip = s.far_point("sword")
+    assert tip[1] == 48  # 2 blocks above the hilt in the model
+    # An upward blade rotated +90 on X points forward (-90 would swing it back):
+    # the tip ends up ~2 blocks ahead of the hilt (corner offsets ±1 px).
+    pos = rest_position(s, "sword_tip", {"sword_tip": ("sword", tip)})
+    assert pos[1] == pytest.approx(1.0, abs=0.1) and pos[2] == pytest.approx(2.0, abs=0.1)

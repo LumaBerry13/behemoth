@@ -28,6 +28,9 @@ const EXCLUDED_GAME_MODES = [GameMode.Creative, GameMode.Spectator];
 const PARTICLES_PER_TICK = 200;
 const PARTICLE_VIEW_RANGE = 64;
 
+/** True while the framework itself is applying damage (see applyDamage / isFrameworkDamage). */
+let frameworkDamage = false;
+
 let particleTick = -1;
 let particlesThisTick = 0;
 
@@ -80,11 +83,11 @@ export const Adapter = {
     /**
      * Before-event: the callback may cancel or rescale damage. It runs in a
      * restricted context, so it must not change the world (L19).
-     * @param {(hurt: Entity, damage: number, cause: string) => ({ cancel?: boolean, damage?: number } | void)} cb
+     * @param {(hurt: Entity, damage: number, cause: string, damager: Entity | undefined) => ({ cancel?: boolean, damage?: number } | void)} cb
      */
     onEntityHurtBefore(cb) {
       world.beforeEvents.entityHurt.subscribe((e) => {
-        const r = cb(e.hurtEntity, e.damage, e.damageSource.cause);
+        const r = cb(e.hurtEntity, e.damage, e.damageSource.cause, e.damageSource.damagingEntity);
         if (!r) return;
         if (r.cancel) e.cancel = true;
         else if (r.damage !== undefined) e.damage = r.damage;
@@ -340,7 +343,20 @@ export const Adapter = {
   applyDamage(target, amount, source, cause = "entityAttack") {
     if (!target.isValid) return false;
     const c = /** @type {EntityDamageCause} */ (cause);
-    return target.applyDamage(amount, source?.isValid ? { cause: c, damagingEntity: source } : { cause: c });
+    frameworkDamage = true;
+    try {
+      return target.applyDamage(amount, source?.isValid ? { cause: c, damagingEntity: source } : { cause: c });
+    } finally {
+      frameworkDamage = false;
+    }
+  },
+  /**
+   * True inside applyDamage, i.e. the hurt before-event comes from a framework
+   * mechanic rather than vanilla AI. Relies on the before-event firing
+   * synchronously during Entity.applyDamage. [VERIFY in-game: framework hits still land]
+   */
+  isFrameworkDamage() {
+    return frameworkDamage;
   },
 
   /**
@@ -364,13 +380,17 @@ export const Adapter = {
     return e.isValid ? e.getVelocity() : { x: 0, y: 0, z: 0 };
   },
   /**
-   * Movement speed as a multiple of the entity JSON value (0 = can't walk). L7.
-   * [VERIFY] defaultValue is the value from the active minecraft:movement component.
-   * @param {Entity} e @param {number} multiplier
+   * Set the movement attribute (blocks/tick-ish, as in minecraft:movement). L7.
+   * @param {Entity} e @param {number} value
    */
-  setMovementMultiplier(e, multiplier) {
+  setMovement(e, value) {
     const m = e.isValid ? e.getComponent("minecraft:movement") : undefined;
-    if (m) m.setCurrentValue(Math.max(0, m.defaultValue * multiplier));
+    if (m) m.setCurrentValue(Math.max(0, value));
+  },
+  /** Movement attribute defaults, for diagnostics. @param {Entity} e */
+  getMovement(e) {
+    const m = e.isValid ? e.getComponent("minecraft:movement") : undefined;
+    return m ? { current: m.currentValue, default: m.defaultValue } : undefined;
   },
   /**
    * Put the player's shield on cooldown (MythicMobs shieldbreak).

@@ -95,6 +95,7 @@ class Bone:
     parent: str | None
     pivot: Vec3
     rotation: Vec3
+    cubes: list[tuple[Vec3, Vec3]] = field(default_factory=list)  # (origin, size) of unrotated cubes
 
 
 @dataclass
@@ -115,8 +116,27 @@ class Skeleton:
                 parent=b.get("parent"),
                 pivot=tuple(float(x) for x in b.get("pivot", (0, 0, 0))),  # type: ignore[arg-type]
                 rotation=tuple(float(x) for x in b.get("rotation", (0, 0, 0))),  # type: ignore[arg-type]
+                cubes=[
+                    (tuple(float(x) for x in c["origin"]), tuple(float(x) for x in c["size"]))  # type: ignore[misc]
+                    for c in b.get("cubes", [])
+                    if "origin" in c and "size" in c and not c.get("rotation")
+                ],
             )
         return cls(bones)
+
+    def far_point(self, name: str) -> Vec3:
+        """Corner of the bone's own cubes farthest from its pivot (a blade tip)."""
+        piv = self.bones[name].pivot
+        best, best_d = piv, -1.0
+        for origin, size in self.bones[name].cubes:
+            for dx in (0, size[0]):
+                for dy in (0, size[1]):
+                    for dz in (0, size[2]):
+                        p = (origin[0] + dx, origin[1] + dy, origin[2] + dz)
+                        d = math.dist(p, piv)
+                        if d > best_d:
+                            best, best_d = p, d
+        return best
 
     def chain(self, name: str) -> list[Bone]:
         """Root → ... → bone."""
@@ -193,29 +213,43 @@ def bone_world_matrix(skel: Skeleton, bone: str, channels: dict[str, BoneChannel
     return m
 
 
-def bone_position(skel: Skeleton, bone: str, channels: dict[str, BoneChannels], time: float) -> Vec3:
-    """Pivot of `bone` in the raw frame (pixels)."""
-    return apply(bone_world_matrix(skel, bone, channels, time), skel.bones[bone].pivot)
+def bone_position(skel: Skeleton, bone: str, channels: dict[str, BoneChannels], time: float,
+                  point: Vec3 | None = None) -> Vec3:
+    """A point carried by `bone` (default: its pivot), in the raw frame (pixels)."""
+    return apply(bone_world_matrix(skel, bone, channels, time), point or skel.bones[bone].pivot)
 
 
-def rest_position(skel: Skeleton, bone: str) -> list[float]:
-    return to_entity_space(bone_position(skel, bone, {}, 0.0))
+# A baked key is a bone name (its pivot) or a named point: key -> (bone, point in raw model pixels).
+PointSpec = tuple[str, Vec3]
 
 
-def bake_animation(skel: Skeleton, anim: dict, bones: list[str]) -> BakeResult:
-    """Sample each bone's pivot once per tick over the animation."""
+def _spec(skel: Skeleton, key: str, points: dict[str, PointSpec] | None) -> PointSpec:
+    if points and key in points:
+        return points[key]
+    return key, skel.bones[key].pivot
+
+
+def rest_position(skel: Skeleton, key: str, points: dict[str, PointSpec] | None = None) -> list[float]:
+    bone, p = _spec(skel, key, points)
+    return to_entity_space(bone_position(skel, bone, {}, 0.0, p))
+
+
+def bake_animation(skel: Skeleton, anim: dict, bones: list[str],
+                   points: dict[str, PointSpec] | None = None) -> BakeResult:
+    """Sample each key (bone pivot, or named point carried by a bone) once per tick."""
     seconds = animation_length_seconds(anim)
     length = max(1, round(seconds * TICKS_PER_SECOND))
     loop_raw = anim.get("loop", False)
     result = BakeResult(length_ticks=length, loop=loop_raw is True)
 
     unbakeable: set[str] = set()
-    needed = {b.name for name in bones for b in skel.chain(name)}
+    specs = {key: _spec(skel, key, points) for key in bones}
+    needed = {b.name for bone, _ in specs.values() for b in skel.chain(bone)}
     channels = {name: _parse_bone_channels(anim, name, unbakeable) for name in needed}
 
-    for name in bones:
-        result.tracks[name] = [
-            to_entity_space(bone_position(skel, name, channels, i / TICKS_PER_SECOND)) for i in range(length)
+    for key, (bone, p) in specs.items():
+        result.tracks[key] = [
+            to_entity_space(bone_position(skel, bone, channels, i / TICKS_PER_SECOND, p)) for i in range(length)
         ]
     result.unbakeable = sorted(unbakeable)
     return result

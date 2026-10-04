@@ -82,3 +82,12 @@ def test_boss_cooldown_seconds_to_ticks_and_mob_lines():
     assert out["skills"]["atk"]["cooldown"] == 200
     assert out["skills"]["mob_0_onTimer"] == {"tr": "onTimer:40", "m": "skill", "o": {"skill": "atk"}, "t": "@target"}
     assert out["damageModifiers"] == {"fall": 0.0, "projectile": 0.5}
+
+
+def test_blade_totem_becomes_capsule_and_summon_lands_at_tip():
+    c = ctx(blades={"blade"})
+    hit = translate_line(parse_skill_line("totem{oH=hit;hr=1.5} @modelpart{pid=blade;o=model;y=-2;z=-1}"), c, "x")
+    assert hit["t"] == "@Bone{bone=blade}" and hit["o"]["to"] == "blade_tip"
+    summon = translate_line(parse_skill_line("sound{s=a} @modelpart{pid=blade;y=-1}"), c, "x")
+    assert summon["t"] == "@Bone{bone=blade_tip}"
+    assert {"blade", "blade_tip"} <= c.used_bones

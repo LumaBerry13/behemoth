@@ -82,7 +82,14 @@ export interface BossConfig {
   /** Entity type ID this config controls. */
   id: string;
   display?: { name?: string; bossBar?: boolean };
-  stats?: { health?: number; armor?: number; knockbackResist?: number; scale?: number };
+  stats?: {
+    health?: number;
+    armor?: number;
+    knockbackResist?: number;
+    scale?: number;
+    /** minecraft:movement value from the entity JSON; setSpeed multiplies this. */
+    movementSpeed?: number;
+  };
   animations?: Record<string, AnimationData>;
   /** Baked bone/point positions in the model's rest pose (converter output), used when no baked animation plays. */
   restPose?: Record<string, [number, number, number]>;
@@ -91,6 +98,8 @@ export interface BossConfig {
     targetRange?: number;
     /** Turn toward the current target every tick (default true). */
     faceTarget?: boolean;
+    /** Let the vanilla melee_attack behaviour deal damage (default false: chase only). */
+    vanillaMelee?: boolean;
     leashRange?: number;
     resetAfterNoPlayers?: number;
   };

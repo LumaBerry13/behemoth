@@ -17,6 +17,7 @@ A JavaScript framework on the Minecraft Bedrock Script API (`@minecraft/server`)
 - `npm run deploy` — copy `BP/` and `RP/` into `%APPDATA%\Minecraft Bedrock\Users\Shared\games\com.mojang\development_*_packs` (override with `MB_COM_MOJANG`), then overlays `private/build/{BP,RP}` (converted bosses; `.lang` files appended to en_US.lang).
 - `npm run convert -- --job private/<boss>.job.json` — run the converter (writes `private/build/` plus `<boss>.report.md`). `npm run test:converter` — pytest.
 - `npm run sim -- <typeId> [ticks] [--hit N] [--distance D] [--walk] [--debug] [--death-event E]` — headless run of the real framework against a `@minecraft/server` stub (`tools/sim/`). Use it to catch runtime errors / broken skill flows before asking the owner to test. No physics or pathing.
+- `npm run sim:hits -- <typeId> <skill,skill>` — swings each attack at players placed around the boss (front/sides/behind × 1.5–4.5 blocks) using the real baked tracks, and checks vanilla-melee cancel + walk speed. Run after any change to hitboxes, bones or the converter's bake.
 - validate / sim / deploy include `private/build` bosses automatically when present.
 - The typings at `node_modules/@minecraft/server/index.d.ts` are the reference for API names — grep them instead of guessing.
 
@@ -108,6 +109,7 @@ MythicMobs → Mythic Bedrock translation rules (converter `mythic.py`):
 - Metaskill `Cooldown` is SECONDS (×20). Delays, timers and `gcd` are ticks.
 - `TargetConditions distance` and `targetwithin` both map to our caster→target `distance`.
 - `@modelpart{o=model}` offsets are in the model's yaw frame; ModelEngine −Z forward → entity space +Z forward (x and z negated).
+- Job `blades: [bone]`: that bone's farthest cube corner is baked as `<bone>_tip`; totems on it become a hilt→tip capsule (`hitbox{to}`) and other mechanics (e.g. summons) target the tip; YAML offsets on blades are dropped (L28).
 - `totem` → `hitbox` (`ti` read as the per-target re-hit interval [VERIFY]); `throw` velocities ÷10 [VERIFY]; `potion level` = amplifier; `lockmodel` → `lockFacing`; `defaultstate` → `baseState`.
 - `model`, `BodyClamp`, `CancelEvent` are skipped. Metaskills not reachable from the mob's skill lines (e.g. another mob's) are not converted.
 - Unsupported items are dropped and listed in `private/build/<boss>.report.md` — read it after every conversion.
@@ -124,6 +126,9 @@ Every boss entity JSON must contain:
 - Facing is framework-owned: `BossInstance.faceTarget()` calls `lookAt` on the target every tick (`ai.faceTarget: false` to opt out).
 - Optional ints `mb:idle_state` / `mb:walk_state` when the boss uses `baseStates` (the converter adds them).
 - RP: render controller reading `mb:` props; `anim_time_update` using speed property. Converted bosses get `controller.animation.<boss>.mb_base` first in `scripts.animate`.
+- Chase AI = `nearest_attackable_target` + `hurt_by_target` + `melee_attack` (pathfinding) + `minecraft:attack`; the vanilla melee damage is cancelled by the framework unless `ai.vanillaMelee: true` (L27). Never use `move_towards_target` (its `within_radius` keeps the mob AWAY).
+- `minecraft:boss.name` must be set (else the bar shows "Unknown"); the converter uses the MythicMobs Display name.
+- Speed: `setSpeed` multiplies `config.stats.movementSpeed` (converter copies the entity's `minecraft:movement` value).
 - The converter's behavior patch also removes `minecraft:despawn` and `minecraft:equipment`, raises format_version to 1.21.0 and turns boolean `deals_damage` into "yes"/"no". The owner's own groups/events (e.g. the death sequence) are kept.
 
 ## Animation & baking (design doc §6, §9)

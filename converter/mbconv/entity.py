@@ -33,7 +33,10 @@ STUB_GROUPS: dict[str, Any] = {
                 {"filters": {"test": "is_family", "subject": "other", "value": "player"}, "max_dist": 32}
             ],
         },
-        "minecraft:behavior.move_towards_target": {"priority": 3, "speed_multiplier": 1.0, "within_radius": 32.0},
+        # Pathfinding chase. Its melee damage is cancelled by the framework
+        # (config ai.vanillaMelee=false, MythicMobs `CancelEvent ~onAttack`).
+        "minecraft:behavior.melee_attack": {"priority": 3, "speed_multiplier": 1.0, "track_target": True},
+        "minecraft:attack": {"damage": 1},
         "minecraft:behavior.look_at_target": {"priority": 4},
     },
     "mb:frozen": {"minecraft:movement": {"value": 0.0}},
@@ -85,7 +88,13 @@ def find_death_event(behavior: dict) -> str | None:
     return None
 
 
-def patch_behavior(behavior: dict, idle_states: int, walk_states: int, boss_bar_range: int, notes: list[str]) -> dict:
+def movement_speed(behavior: dict) -> float | None:
+    v = behavior.get("minecraft:entity", {}).get("components", {}).get("minecraft:movement", {}).get("value")
+    return float(v) if isinstance(v, (int, float)) else None
+
+
+def patch_behavior(behavior: dict, idle_states: int, walk_states: int, boss_bar_range: int, notes: list[str],
+                   boss_name: str = "") -> dict:
     out = copy.deepcopy(behavior)
     if _version_tuple(out.get("format_version", "0")) < _version_tuple(STUB_FORMAT):
         notes.append(f"behavior format_version {out.get('format_version')} → {STUB_FORMAT} (entity properties)")
@@ -111,6 +120,8 @@ def patch_behavior(behavior: dict, idle_states: int, walk_states: int, boss_bar_
             notes.append(f"removed {removed}: {why}")
     comps["minecraft:persistent"] = {}
     comps["minecraft:boss"] = {"should_darken_sky": False, "hud_range": boss_bar_range}
+    if boss_name:
+        comps["minecraft:boss"]["name"] = boss_name
     fam = comps.setdefault("minecraft:type_family", {"family": []}).setdefault("family", [])
     if "mb_boss" not in fam:
         fam.append("mb_boss")

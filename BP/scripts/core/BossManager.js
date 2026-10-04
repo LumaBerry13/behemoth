@@ -55,8 +55,15 @@ export class BossManager {
     ev.onEntitySpawn((entity) => this.attach(entity));
     ev.onEntityLoad((entity) => this.attach(entity));
 
-    // MythicMobs DamageModifiers. Runs in a before-event: no world writes here.
-    ev.onEntityHurtBefore((hurt, damage, cause) => {
+    // Runs in a before-event: no world writes here.
+    ev.onEntityHurtBefore((hurt, damage, cause, damager) => {
+      // Vanilla melee from a boss is cancelled (MythicMobs `CancelEvent ~onAttack`):
+      // the chase AI uses melee_attack only for pathfinding; damage comes from skills.
+      if (damager && !Adapter.isFrameworkDamage()) {
+        const attacker = this.instances.get(damager.id);
+        if (attacker && attacker.config.ai?.vanillaMelee !== true && cause === "entityAttack") return { cancel: true };
+      }
+      // MythicMobs DamageModifiers on the boss itself.
       const boss = this.instances.get(hurt.id);
       const mod = boss?.config.damageModifiers?.[cause];
       if (mod === undefined || boss.dead) return;

@@ -175,7 +175,15 @@ export class BossInstance {
   /** Movement speed as a multiple of the entity's base speed (0 = rooted). @param {number} mult */
   setSpeed(mult) {
     this.speedMult = mult;
-    Adapter.setMovementMultiplier(this.entity, mult);
+    Adapter.setMovement(this.entity, this.baseSpeed * mult);
+  }
+
+  /**
+   * Base walk speed: config.stats.movementSpeed (the entity JSON minecraft:movement
+   * value), else the attribute's default.
+   */
+  get baseSpeed() {
+    return this.config.stats?.movementSpeed ?? Adapter.getMovement(this.entity)?.default ?? 0.25;
   }
 
   /**
