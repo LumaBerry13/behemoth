@@ -23,6 +23,8 @@ export class CancelToken {
 
 /** @typedef {{ fn: () => void, token: CancelToken | undefined }} Task */
 
+const PERF_WINDOW = 200;
+
 export class Scheduler {
   constructor() {
     /** Framework tick counter, advanced once per loop iteration. */
@@ -32,6 +34,25 @@ export class Scheduler {
     /** @type {Set<(tick: number) => void>} */
     this.tickHandlers = new Set();
     this.runId = /** @type {number | undefined} */ (undefined);
+    /** Rolling cost of the framework tick loop (ms per tick), last PERF_WINDOW ticks. */
+    this.perfSamples = new Float64Array(PERF_WINDOW);
+  }
+
+  /**
+   * Average / max framework time per tick over the last PERF_WINDOW ticks.
+   * Date.now() has 1 ms resolution, so single ticks read 0 or 1; the average
+   * over the window is still a fair estimate. [VERIFY: no finer timer in the stable API]
+   */
+  perf() {
+    let sum = 0;
+    let max = 0;
+    for (const v of this.perfSamples) {
+      sum += v;
+      if (v > max) max = v;
+    }
+    let pending = 0;
+    for (const b of this.buckets.values()) pending += b.length;
+    return { avgMs: sum / PERF_WINDOW, maxMs: max, pending, window: PERF_WINDOW };
   }
 
   start() {
@@ -58,6 +79,13 @@ export class Scheduler {
 
   /** @private */
   step() {
+    const t0 = Date.now();
+    this.runTick();
+    this.perfSamples[this.tick % PERF_WINDOW] = Date.now() - t0;
+  }
+
+  /** @private */
+  runTick() {
     this.tick++;
     for (const h of this.tickHandlers) {
       try {

@@ -98,6 +98,7 @@ export default {
       });
       for (const e of near) {
         if (e.id === boss.id || !a.hasHealth(e)) continue;
+        if (!boss.config.ai?.friendlyFire && ctx.services.bosses.get(e.id)) continue; // no boss-on-boss hits
         const isPlayer = a.isPlayer(e);
         if (isPlayer ? o.hitPlayers === false || !a.isTargetablePlayer(e) : !o.hitNonPlayers) continue;
         if ((hits.get(e.id) ?? 0) > now) continue;

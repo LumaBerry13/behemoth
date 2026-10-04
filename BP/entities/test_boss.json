@@ -19,7 +19,10 @@
         "minecraft:behavior.random_look_around": { "priority": 8 }
       },
       "mb:chase": {
-        "minecraft:behavior.hurt_by_target": { "priority": 1 },
+        "minecraft:behavior.hurt_by_target": {
+          "priority": 1,
+          "entity_types": { "filters": { "test": "is_family", "subject": "other", "value": "player" } }
+        },
         "minecraft:behavior.nearest_attackable_target": {
           "priority": 2,
           "must_see": false,

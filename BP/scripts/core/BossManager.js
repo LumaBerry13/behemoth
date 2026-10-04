@@ -57,14 +57,17 @@ export class BossManager {
 
     // Runs in a before-event: no world writes here.
     ev.onEntityHurtBefore((hurt, damage, cause, damager) => {
+      const boss = this.instances.get(hurt.id);
+      const attacker = damager ? this.instances.get(damager.id) : undefined;
       // Vanilla melee from a boss is cancelled (MythicMobs `CancelEvent ~onAttack`):
       // the chase AI uses melee_attack only for pathfinding; damage comes from skills.
-      if (damager && !Adapter.isFrameworkDamage()) {
-        const attacker = this.instances.get(damager.id);
-        if (attacker && attacker.config.ai?.vanillaMelee !== true && cause === "entityAttack") return { cancel: true };
+      if (attacker && !Adapter.isFrameworkDamage() && attacker.config.ai?.vanillaMelee !== true && cause === "entityAttack") {
+        return { cancel: true };
       }
+      // Bosses never hurt each other (one shared faction) unless ai.friendlyFire.
+      if (attacker && boss && attacker !== boss && attacker.config.ai?.friendlyFire !== true) return { cancel: true };
+      if (boss?.invulnerable && !boss.dead) return { cancel: true };
       // MythicMobs DamageModifiers on the boss itself.
-      const boss = this.instances.get(hurt.id);
       const mod = boss?.config.damageModifiers?.[cause];
       if (mod === undefined || boss.dead) return;
       if (mod > 0) return { damage: damage * mod };
@@ -121,7 +124,12 @@ export class BossManager {
   attach(entity) {
     if (!entity.isValid || this.instances.has(entity.id)) return this.instances.get(entity.id);
     const compiled = this.configs.get(entity.typeId);
-    if (!compiled || Persistence.isDead(entity)) return undefined;
+    if (!compiled) return undefined;
+    if (Persistence.isDead(entity)) {
+      // Reloaded while its death animation was playing: never re-arm, make sure it goes away.
+      this.trackTemporary(entity, 40);
+      return undefined;
+    }
 
     const boss = new BossInstance(entity, compiled, this.services);
     const now = this.services.scheduler.tick;
@@ -134,7 +142,6 @@ export class BossManager {
       // Running skills are not persisted, so undo any temporary state they set
       // (frozen AI, invulnerability) instead of resuming stuck in it.
       boss.setAiMode(compiled.config.ai?.default ?? "chase");
-      boss.setInvulnerable(false);
       boss.setSpeed(boss.speedMult);
       boss.applyDisplay();
       Log.debug(`resumed ${entity.typeId} (${entity.id}) in phase ${boss.phase}`);
@@ -203,6 +210,8 @@ export class BossManager {
       boss.facingLocked = true;
       boss.setSpeed(0);
       boss.setAiMode("frozen");
+      // Backstop: if the entity JSON's own despawn never happens, remove the body.
+      if (boss.config.death?.event) this.trackTemporary(boss.entity, boss.config.death.removeAfter ?? 400);
     }
     this.services.bus.emit("death", { boss, triggerEntity: killer, data: { cause } });
     this.spawnDrops(boss);

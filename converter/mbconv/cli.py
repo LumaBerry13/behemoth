@@ -20,6 +20,8 @@ files and the per-boss mappings:
   "blades": ["<bone>"],  # weapon bones: hits use a hilt->tip capsule, summons land at the tip
   "tuning": {            # Bedrock-side adjustments on top of the YAML (all optional)
     "stop_distance": 2.5,                  # ai.stopDistance
+    "leash_range": 48,                     # ai.leashRange (default 48)
+    "reset_after_no_players": 600,         # ai.resetAfterNoPlayers, ticks (default 600)
     "damage_multiplier": 1.0,              # stats.damageMultiplier
     "ignore_difficulty": false,            # stats.ignoreDifficulty
     "randomskill_mode": "available",       # mode for every randomSkill line
@@ -47,7 +49,9 @@ import yaml
 
 from . import __version__
 from .bake import Skeleton, bake_animation, rest_position
-from .entity import build_base_controller, find_death_event, movement_speed, patch_behavior, patch_client_entity
+from .entity import (
+    build_base_controller, death_duration_ticks, find_death_event, movement_speed, patch_behavior, patch_client_entity,
+)
 from .jsout import Raw, inline, pretty, track
 from .mythic import Context, translate_boss
 
@@ -158,8 +162,12 @@ def convert(job_path: Path, out: Path) -> Path:
 
     # ---------------- boss config ----------------
     death_event = find_death_event(behavior)
+    death_cfg = None
     if death_event:
-        notes.append(f"custom death: entity event '{death_event}' is treated as the boss's death")
+        dur = death_duration_ticks(behavior, death_event)
+        death_cfg = {"event": death_event, "removeAfter": (dur or 360) + 40}
+        notes.append(f"custom death: entity event '{death_event}' is treated as the boss's death; "
+                     f"body removed after {death_cfg['removeAfter']} ticks if the entity hasn't despawned itself")
     requires = sorted(m for m in ctx.used_mechanics if not m.startswith("__"))
     config = {
         "schemaVersion": 1,
@@ -173,9 +181,11 @@ def convert(job_path: Path, out: Path) -> Path:
         "restPose": Raw("rest"),
         "baseStates": ctx.base_states,
         "ai": {"default": "chase", "targetRange": tb["targetRange"], "vanillaMelee": False,
+               "leashRange": tuning.get("leash_range", 48),
+               "resetAfterNoPlayers": tuning.get("reset_after_no_players", 600),
                **({"stopDistance": tuning["stop_distance"]} if "stop_distance" in tuning else {})},
         "threat": {"enabled": tb["threat"]},
-        **({"death": {"event": death_event}} if death_event else {}),
+        **({"death": death_cfg} if death_cfg else {}),
         **({"damageModifiers": tb["damageModifiers"]} if tb["damageModifiers"] else {}),
         "skills": tb["skills"],
         "requires": requires,

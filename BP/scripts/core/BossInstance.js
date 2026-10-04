@@ -5,7 +5,7 @@ import { Adapter } from "../adapter/Adapter.js";
 import { CancelToken } from "./Scheduler.js";
 import { ThreatTable } from "./ThreatTable.js";
 import { Log } from "./Logger.js";
-import { rotateYaw } from "./vec.js";
+import { rotateYaw, distance } from "./vec.js";
 
 /** @typedef {import("@minecraft/server").Entity} Entity */
 /** @typedef {import("@minecraft/server").Vector3} Vector3 */
@@ -56,6 +56,10 @@ export class BossInstance {
     this.speedMult = 1;
     /** True while the boss holds position because its target is within ai.stopDistance. */
     this.holding = false;
+    /** Script-level invulnerability (all incoming damage cancelled). */
+    this.invulnerable = false;
+    /** Ticks without any targetable player in range (for ai.resetAfterNoPlayers). */
+    this.noPlayerTicks = 0;
     /** @type {Map<string, Map<string, number>>} hitbox key → entity id → tick it can be hit again */
     this.hitCooldowns = new Map();
     /** @type {Entity | undefined} last entity that damaged the boss */
@@ -140,6 +144,7 @@ export class BossInstance {
     this.dimensionId = this.entity.dimension.id;
     this.faceTarget();
     this.updateHold();
+    if (this.age % 20 === 0) this.checkReset();
     this.services.bus.emit("tick", { boss: this, data: { age: this.age } });
   }
 
@@ -192,9 +197,69 @@ export class BossInstance {
     return ++this.aiSeq;
   }
 
-  /** @param {boolean} on */
+  /**
+   * Script-level invulnerability: BossManager cancels every incoming hit in the
+   * entityHurt before-event. (The stub's mb:invulnerable component group is no
+   * longer used: removing a group that defines minecraft:damage_sensor also
+   * removes the entity's own sensor, e.g. a custom-death sensor.)
+   * @param {boolean} on
+   */
   setInvulnerable(on) {
-    Adapter.triggerEvent(this.entity, on ? "mb:invuln_on" : "mb:invuln_off");
+    this.invulnerable = on;
+  }
+
+  // -------------------------------------------------------------------------
+  // Reset / leash (design doc §10)
+  // -------------------------------------------------------------------------
+  /** Called every 20 ticks. */
+  checkReset() {
+    const ai = this.config.ai ?? {};
+    const loc = this.location;
+    if (ai.leashRange && distance(loc, this.spawnPoint) > ai.leashRange) {
+      this.reset("left its leash range");
+      return;
+    }
+    if (!ai.resetAfterNoPlayers) return;
+    const anyone = Adapter.getTargetablePlayers(this.dimension, loc, this.targetRange).length > 0;
+    this.noPlayerTicks = anyone ? 0 : this.noPlayerTicks + 20;
+    if (this.noPlayerTicks >= ai.resetAfterNoPlayers && this.needsReset()) this.reset("no players nearby");
+  }
+
+  /** Anything to undo? Avoids resetting an untouched boss every interval. */
+  needsReset() {
+    const firstPhase = this.config.phases?.[0]?.id ?? 1;
+    return this.healthPct() < 100 || this.phase !== firstPhase || this.threat.threat.size > 0
+      || distance(this.location, this.spawnPoint) > 3;
+  }
+
+  /**
+   * Return to the start of the fight: cancel skills, full health, first phase,
+   * clear threat and cooldowns, back to the spawn point. Fires the `reset`
+   * event (onReset trigger). Tags and variables are kept.
+   * @param {string} reason
+   */
+  reset(reason) {
+    this.cancelAll();
+    this.noPlayerTicks = 0;
+    const h = Adapter.getHealth(this.entity);
+    Adapter.setHealth(this.entity, h.max);
+    const first = this.config.phases?.[0];
+    this.phase = first?.id ?? 1;
+    Adapter.setProperty(this.entity, "mb:phase", this.phase);
+    for (const [k, v] of Object.entries(first?.properties ?? {})) Adapter.setProperty(this.entity, k, v);
+    this.threat.clear();
+    this.cooldowns.clear();
+    this.hitCooldowns.clear();
+    this.gcdUntil = 0;
+    this.invulnerable = false;
+    this.facingLocked = false;
+    this.setSpeed(1);
+    this.setAiMode(this.config.ai?.default ?? "chase");
+    Adapter.clearVelocity(this.entity);
+    Adapter.teleport(this.entity, this.spawnPoint);
+    Log.info(`${this.config.id} reset (${reason})`);
+    this.services.bus.emit("reset", { boss: this, data: { reason } });
+    this.services.bosses.save(this);
   }
 
   /** Movement speed as a multiple of the entity's base speed (0 = rooted). @param {number} mult */

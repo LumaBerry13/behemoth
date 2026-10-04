@@ -133,6 +133,7 @@ import onAttack from "../modules/triggers/on_attack.js";
 import onPhase from "../modules/triggers/on_phase.js";
 import animEnd from "../modules/triggers/anim_end.js";
 import onMarker from "../modules/triggers/on_marker.js";
+import onReset from "../modules/triggers/on_reset.js";
 
 /** @param {SkillManager} sm */
 export function bindModules(sm) {
@@ -194,4 +195,5 @@ export function bindModules(sm) {
   sm.bindTrigger("onPhase", onPhase);
   sm.bindTrigger("animEnd", animEnd);
   sm.bindTrigger("onMarker", onMarker);
+  sm.bindTrigger("onReset", onReset);
 }

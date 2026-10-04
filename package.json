@@ -9,6 +9,7 @@
     "validate": "node tools/validate.mjs",
     "sim": "node tools/sim/run.mjs",
     "sim:hits": "node tools/sim/hits.mjs",
+    "sim:scenarios": "node tools/sim/scenarios.mjs",
     "convert": "python converter/convert.py",
     "test:converter": "python -m pytest converter/tests -q",
     "deploy": "node tools/deploy.mjs"

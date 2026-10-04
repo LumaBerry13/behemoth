@@ -1,4 +1,4 @@
-// Toggles the mb:invulnerable component group (damage_sensor) on the boss.
+// Makes the boss ignore all damage (script-level, see BossInstance.setInvulnerable).
 // o: { on: boolean }
 /** @type {import("../../types/config").Mechanic} */
 export default {

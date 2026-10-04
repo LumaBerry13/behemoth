@@ -1,5 +1,5 @@
 // @EntitiesInRadius{r=4} — living entities around the caster, excluding the caster,
-// its summons, and creative/spectator players.
+// summons, other framework bosses (unless ai.friendlyFire) and creative/spectator players.
 /** @type {import("../../types/config").Targeter} */
 export default {
   name: "EntitiesInRadius",
@@ -13,8 +13,10 @@ export default {
       maxDistance: o.r,
       excludeTags: ["mb_summon"],
     });
+    const ff = ctx.boss.config.ai?.friendlyFire;
     return all.filter(
       (e) => e.id !== ctx.caster.id && a.hasHealth(e) && (!a.isPlayer(e) || a.isTargetablePlayer(e))
+        && (ff || !ctx.services.bosses.get(e.id))
     );
   },
 };

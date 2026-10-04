@@ -99,6 +99,10 @@ export interface BossConfig {
   restPose?: Record<string, [number, number, number]>;
   ai?: {
     default?: AiMode;
+    /** Reset when farther than this from the spawn point (blocks). Off when unset. */
+    leashRange?: number;
+    /** Reset after this many ticks with no targetable player within targetRange. Off when unset. */
+    resetAfterNoPlayers?: number;
     targetRange?: number;
     /** Turn toward the current target every tick (default true). */
     faceTarget?: boolean;
@@ -106,8 +110,8 @@ export interface BossConfig {
     vanillaMelee?: boolean;
     /** Stop walking when the target is within this many blocks (horizontal). Off when unset. */
     stopDistance?: number;
-    leashRange?: number;
-    resetAfterNoPlayers?: number;
+    /** Let this boss's skills/melee damage other framework bosses (default false). */
+    friendlyFire?: boolean;
   };
   threat?: { enabled?: boolean };
   phases?: PhaseDef[];
@@ -127,7 +131,11 @@ export interface BossConfig {
    * plays a death animation then despawns). The framework treats this entity
    * event as the boss's death.
    */
-  death?: { event?: string };
+  death?: {
+    event?: string;
+    /** Ticks after the death event to remove the body if the entity JSON hasn't (default 400). */
+    removeAfter?: number;
+  };
   /**
    * Client base-layer animations, selectable at runtime via the `baseState`
    * mechanic. Index in each list = value of entity property mb:idle_state / mb:walk_state.

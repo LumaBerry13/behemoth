@@ -23,7 +23,11 @@ STUB_GROUPS: dict[str, Any] = {
         "minecraft:behavior.random_look_around": {"priority": 8},
     },
     "mb:chase": {
-        "minecraft:behavior.hurt_by_target": {"priority": 1},
+        # Only players: otherwise a boss hit by another boss would chase it.
+        "minecraft:behavior.hurt_by_target": {
+            "priority": 1,
+            "entity_types": {"filters": {"test": "is_family", "subject": "other", "value": "player"}},
+        },
         "minecraft:behavior.nearest_attackable_target": {
             "priority": 2,
             "must_see": False,
@@ -71,6 +75,21 @@ def _fix_deals_damage(node: Any) -> None:
     elif isinstance(node, list):
         for x in node:
             _fix_deals_damage(x)
+
+
+def death_duration_ticks(behavior: dict, event: str) -> int | None:
+    """Longest minecraft:timer in the groups the death event adds (custom death length)."""
+    ent = behavior.get("minecraft:entity", {})
+    added = ent.get("events", {}).get(event, {}).get("add", {}).get("component_groups", [])
+    best = None
+    for g in added:
+        timer = ent.get("component_groups", {}).get(g, {}).get("minecraft:timer")
+        if not timer:
+            continue
+        t = timer.get("time", 0)
+        secs = max(float(x) for x in t) if isinstance(t, list) else float(t)
+        best = max(best or 0, int(round(secs * 20)))
+    return best
 
 
 def find_death_event(behavior: dict) -> str | None:

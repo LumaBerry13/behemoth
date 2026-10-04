@@ -6,6 +6,8 @@
 //   /mb:debug [on]        toggle debug logs + action-bar overlay
 //   /mb:bones [on]        toggle baked-bone particle markers
 //   /mb:seed [seed]       seed the RNG for replayable fights (omit to unseed)
+//   /mb:reset             reset the nearest boss (heal, phase 1, back to spawn)
+//   /mb:perf              framework cost per tick (avg/max over the last 200 ticks)
 import { Adapter } from "../adapter/Adapter.js";
 import { Log } from "../core/Logger.js";
 import { Random } from "../core/Random.js";
@@ -86,6 +88,19 @@ export function registerDebugCommands(startup, services) {
       return `§a[MB] bone markers ${DebugState.bones ? "on" : "off"}`;
     }
   );
+
+  c.register(startup, { name: "mb:reset", description: "Reset the nearest boss" }, (p) => {
+    const boss = nearestBoss(p);
+    if (!boss) return "§c[MB] no boss within range";
+    boss.reset("debug command");
+    return "§a[MB] boss reset";
+  });
+
+  c.register(startup, { name: "mb:perf", description: "Framework cost per tick" }, () => {
+    const s = services.scheduler.perf();
+    const n = services.bosses.all().length;
+    return `§a[MB] ${s.avgMs.toFixed(3)} ms/tick avg, ${s.maxMs} ms max (last ${s.window} ticks) · ${n} boss(es) · ${s.pending} pending task(s)`;
+  });
 
   c.register(
     startup,
