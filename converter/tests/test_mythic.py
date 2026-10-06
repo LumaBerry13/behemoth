@@ -168,3 +168,17 @@ def test_reachability_follows_inline_lists_and_condition_actions():
         "c": {"Skills": ["damage{a=1}"]},
     }
     assert set(reachable_skills([parse_skill_line("skill{s=a} ~onSpawn")], skills)) == {"a", "b", "c"}
+
+
+def test_coloured_dust_maps_to_the_particle_library():
+    c = ctx()
+    line = translate_line(parse_skill_line(
+        "particle{p=dust_color_transition;color=#00ffff;color2=#0066cc;size=1;a=2;hs=.15} @self"), c, "x")
+    assert line["o"]["particle"] == "bhm:dust_transition"
+    assert line["o"]["color"] == "#00FFFF" and line["o"]["color2"] == "#0066CC" and line["o"]["size"] == 0.1
+    line = translate_line(parse_skill_line("particle{p=reddust;color=255,128,0}"), c, "x")
+    assert line["o"]["particle"] == "bhm:dust" and line["o"]["color"] == "#FF8000"
+    line = translate_line(parse_skill_line("particle{p=reddust}"), c, "x")
+    assert line["o"]["color"] == "#FF0000"
+    line = translate_line(parse_skill_line("particle{p=flame;color=#ffffff}"), c, "x")
+    assert "color" not in line["o"]  # vanilla particles take no colour

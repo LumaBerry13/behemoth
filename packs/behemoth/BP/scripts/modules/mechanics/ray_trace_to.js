@@ -5,7 +5,9 @@
 // (players; other mobs with hitNonPlayers). Both skills see the end point as
 // @Origin. `particle` draws the line every `spacing` blocks.
 // o: { maxDistance?=32, startY?=1.5, width?=1, stopAtBlock?=true, stopAtTarget?=true,
-//      locationSkill?, entitySkill?, hitPlayers?=true, hitNonPlayers?=false, particle?, spacing?=0.5 }
+//      locationSkill?, entitySkill?, hitPlayers?=true, hitNonPlayers?=false, particle?, spacing?=0.5,
+//      particleOptions? (color, size, lifetime... for `particle`) }
+import { particleVars, particleOptionErrors } from "../shared/particle_vars.js";
 
 /** @type {import("../../types/config").Mechanic} */
 export default {
@@ -17,6 +19,7 @@ export default {
       if (o[k] !== undefined && !vctx.config.skills[o[k]]) errors.push(`\`${k}\` skill "${o[k]}" is not defined`);
     }
     if (o.locationSkill === undefined && o.entitySkill === undefined && o.particle === undefined) errors.push("needs `locationSkill`, `entitySkill` or `particle`");
+    if (o.particleOptions !== undefined) errors.push(...particleOptionErrors(o.particleOptions).map((e) => `particleOptions: ${e}`));
     for (const k of ["maxDistance", "width", "spacing"]) if (o[k] !== undefined && (typeof o[k] !== "number" || o[k] <= 0)) errors.push(`\`${k}\` must be > 0`);
     return errors;
   },
@@ -48,7 +51,7 @@ export default {
         const step = o.spacing ?? 0.5;
         const pts = [];
         for (let s = 0; s <= dist; s += step) pts.push({ x: from.x + dir.x * s, y: from.y + dir.y * s, z: from.z + dir.z * s });
-        a.spawnParticles(dim, o.particle, pts);
+        a.spawnParticles(dim, o.particle, pts, o.particleOptions ? particleVars(o.particleOptions) : undefined);
       }
 
       if (o.entitySkill) {

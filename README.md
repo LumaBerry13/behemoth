@@ -43,6 +43,8 @@ also comes with a Python converter that turns MythicMobs + ModelEngine bosses in
   summoned effects (telegraphs, slashes) know their boss.
 - **Multiplayer:** health scales with the number of players; loot goes into a chest where the boss died, and
   explosions can't destroy it. Bosses are removed on Peaceful.
+- **Particle library:** coloured dust, sparks, smoke, glows, flashes, shockwave rings, swirls and ground telegraphs
+  are built into the framework; skills set colour, size and lifetime per line. See [docs/particles.md](docs/particles.md).
 - **Persistence:** fights survive chunk unloads, `/reload` and restarts.
 - **Validation:** configs are checked when they register, and offline with `npm run validate`.
 - **`/behemoth`:** a chest-style settings menu, described below.
@@ -51,7 +53,7 @@ also comes with a Python converter that turns MythicMobs + ModelEngine bosses in
 
 | Kind | Modules |
 | --- | --- |
-| Mechanics | **Combat:** `damage`, `percentDamage`, `heal`, `potion`, `ignite`, `lightning`, `throw`, `knockback`, `pull`, `shieldBreak`, `invulnerable`, `hitbox`, `projectile` · **Movement:** `leap`, `lunge`, `propel`, `velocity`, `teleport`, `teleportBehind`, `setSpeed`, `setAI`, `lockFacing` · **Visual/audio:** `state`, `baseState`, `particle`, `particleRing`, `particleSphere`, `particleLine`, `sound`, `cameraShake`, `setProperty`, `message`, `title`, `actionBar` · **World:** `summon`, `remove`, `tempBlocks` · **Flow:** `delay`, `waitMarker`, `skill`, `randomSkill`, `aura`, `gcd`, `phase`, `setVariable`, `variableMath`, `signal`, `addTag`, `removeTag` · **Other:** `rayTraceTo`, `modifyProjectile`, `setRotation`, `matchRotation`, `stun`, `tint`, `bossBar`, `explosion`, `shoot`, `jump`, `threat`, `setHealth`, `swap`, `forcePull`, `command`, `suicide` |
+| Mechanics | **Combat:** `damage`, `percentDamage`, `heal`, `potion`, `ignite`, `lightning`, `throw`, `knockback`, `pull`, `shieldBreak`, `invulnerable`, `hitbox`, `projectile` · **Movement:** `leap`, `lunge`, `propel`, `velocity`, `teleport`, `teleportBehind`, `setSpeed`, `setAI`, `lockFacing` · **Visual/audio:** `state`, `baseState`, `particle`, `particleRing`, `particleSphere`, `particleLine`, `telegraph`, `sound`, `cameraShake`, `setProperty`, `message`, `title`, `actionBar` · **World:** `summon`, `remove`, `tempBlocks` · **Flow:** `delay`, `waitMarker`, `skill`, `randomSkill`, `aura`, `gcd`, `phase`, `setVariable`, `variableMath`, `signal`, `addTag`, `removeTag` · **Other:** `rayTraceTo`, `modifyProjectile`, `setRotation`, `matchRotation`, `stun`, `tint`, `bossBar`, `explosion`, `shoot`, `jump`, `threat`, `setHealth`, `swap`, `forcePull`, `command`, `suicide` |
 | Targeters | `@self`, `@target`, `@trigger`, `@PlayersInRadius`, `@EntitiesInRadius`, `@NearestPlayer`, `@RandomPlayer`, `@ThreatTable`, `@Cone`, `@Ring`, `@SelfLocation`, `@TargetLocation`, `@Bone`, `@Forward`, `@Origin`, `@Parent`, `@RandomLocationsNearCaster`, `@RandomLocationsNearTarget`, `@MobsInRadius`, `@PlayersInRing`, `@Line`, `@Location`, `@Spawn` |
 | Conditions | `healthPct`, `distance`, `chance`, `phase`, `hasTarget`, `hasTag`, `offGcd`, `moving`, `inBlock`, `lineOfSight`, `height`, `altitude`, `playersNearby`, `variable`, `varEquals`, `variableIsSet`, `fieldOfView`, `inCombat`, `directionalVelocity`, `onGround`, `isPlayer`, `onFire`, `crouching`, `sprinting`, `entityType`, `hasEffect` (any can be negated with `!`, and end in `castInstead <skill>` / `orElseCast <skill>`) |
 | Triggers | `onSpawn`, `onLoad`, `onTimer:N`, `onDamaged`, `onDeath`, `onAttack`, `onInteract`, `onCombat`, `onDropCombat`, `onChangeTarget`, `onKillPlayer`, `onPhase:N`, `onSignal:name`, `onReset`, `animEnd`, `onMarker:name` |
@@ -105,8 +107,8 @@ packs/behemoth_demo/     example boss pack (test boss with a demo_* skill per mo
 connector/connector.js   the connector every boss pack includes (copy unchanged)
 connector/framework.json framework UUID/version that boss packs depend on
 converter/               Python converter: MythicMobs + ModelEngine → Behemoth boss pack
-tools/                   deploy, validate, package, headless simulator (tools/sim)
-docs/                    menu icon list
+tools/                   deploy, validate, package, particle library generator, headless simulator (tools/sim)
+docs/                    menu icon list, particle library
 private/                 git-ignored: licensed sources and their converted boss packs
 ```
 
@@ -210,7 +212,7 @@ export default {
 | M1 (done) | Core runtime: adapter, scheduler, event bus, managers, persistence, validator |
 | M2 (done) | Entity stub, minimal converter, first modules, first converted boss tested in-game |
 | M3 (mostly done) | Full converter: interpolation modes, Molang sampling, unbakeable-bone detection, entity patch, config skeleton, report, pytest. Missing: Blockbench timeline markers / hit frames, `q.anim_time`-only Molang |
-| M4 (current) | v1 modules (done), reset/leash (done), library split (done), minions (done), shared particle library |
+| M4 (current) | v1 modules (done), reset/leash (done), library split (done), minions (done), shared particle library (done) |
 | M5 | 2–3 converted bosses end to end, CPU budget, tag v1 |
 
 M3 was built alongside M2 and M4 (the Dark Knight needed most of it), so it

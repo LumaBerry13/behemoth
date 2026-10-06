@@ -800,5 +800,29 @@ console.log("\n31. triggers: onCombat, onDropCombat, onChangeTarget, onKillPlaye
   }
 }
 
+console.log("\n32. particle library: bhm:* particles with colour/size/lifetime variables, telegraph");
+{
+  const d = demo();
+  if (!d) check("skipped (demo pack not loaded)", true);
+  else {
+    const line = (out, start, ...parts) => out.some(([, k, x]) => k === "particle" && x.startsWith(start) && parts.every((p) => x.includes(p)));
+    let out = d.run("demo_particles", 70);
+    const ids = ["dust", "dust_transition", "spark", "smoke", "glow", "flash", "ring", "swirl"];
+    const missing = ids.filter((id) => !d.has(out, "particle", `bhm:${id} @`));
+    check("every library particle spawned", missing.length === 0, missing.join(","));
+    check("colour and size reach the particle", line(out, "bhm:dust @", "color=#00ffff", "size=0.12"));
+    check("color2 for the transition", line(out, "bhm:dust_transition @", "color2=#0066cc"));
+    check("lifetime ticks → seconds", line(out, "bhm:glow @", "lifetime=1.5"));
+    check("amount, width, rise → count, radius, rise", line(out, "bhm:swirl @", "count=40", "radius=1.2", "rise=2.5"));
+    check("particleRing passes the variables too", d.count(out, "particle", "bhm:glow @") >= 24 && line(out, "bhm:glow @", "color=#ff3030"));
+    const hp = d.player.health.currentValue;
+    out = d.run("demo_telegraph", 5);
+    check("telegraph: flat circle on the ground, radius + duration", line(out, "bhm:telegraph @ (0, 64.05, 5)", "size=3", "lifetime=1.5", "color=#ff3030"));
+    check("…no damage before it ends", d.player.health.currentValue === hp);
+    mc.tick(30);
+    check("…the hit lands when it ends", d.player.health.currentValue < hp);
+  }
+}
+
 console.log(failures ? `\n[scenarios] ${failures} FAILED` : "\n[scenarios] all passed");
 process.exit(failures ? 1 : 0);

@@ -16,7 +16,11 @@ export const CustomCommandParamType = new Proxy({}, { get: (_t, k) => k });
 export const CustomCommandStatus = { Success: 0, Failure: 1 };
 
 export class MolangVariableMap {
-  setFloat() {} setColorRGB() {} setColorRGBA() {} setVector3() {} setSpeedAndDirection() {}
+  constructor() { this.values = {}; }
+  setFloat(k, v) { this.values[k] = Math.round(v * 1000) / 1000; }
+  setColorRGBA(k, c) { this.values[k] = "#" + [c.red, c.green, c.blue].map((x) => Math.round(x * 255).toString(16).padStart(2, "0")).join(""); }
+  setColorRGB(k, c) { this.setColorRGBA(k, c); }
+  setVector3() {} setSpeedAndDirection() {}
 }
 /** Items with a stack size other than 64 (enough for the tests). */
 const STACK = { "minecraft:diamond_sword": 1, "minecraft:ender_pearl": 16, "minecraft:snowball": 16 };
@@ -167,7 +171,10 @@ class Dimension {
     deferred.push(() => { if (e.isValid) world.afterEvents.entitySpawn.fire({ entity: e, cause: "Spawned" }); });
     return e; }
   spawnItem(item, loc) { note("drop", `${item.typeId} x${item.amount}`); }
-  spawnParticle(name, loc) { note("particle", `${name} @ ${fmt(loc)}`); }
+  spawnParticle(name, loc, vars) {
+    const v = vars && Object.keys(vars.values).length ? " " + Object.entries(vars.values).map(([k, x]) => `${k.replace("variable.", "")}=${x}`).join(",") : "";
+    note("particle", `${name} @ ${fmt(loc)}${v}`);
+  }
   playSound(id, loc, o) { note("sound", `${id} v${o?.volume} p${o?.pitch}`); }
   getBlock(loc) {
     const key = `${Math.floor(loc.x)},${Math.floor(loc.y)},${Math.floor(loc.z)}`;

@@ -240,6 +240,30 @@ export default {
       targetIf: ["isPlayer", "onGround", "!onFire", "!crouching", "!sprinting", "entityType{types=minecraft:player}", "!hasEffect{effect=slowness}"],
       m: "actionBar", o: { text: "§7Target checks passed" },
     },
+    // Framework particle library (bhm:*): colour, size, lifetime... set per line.
+    demo_particles: {
+      c: [
+        { m: "particle", o: { particle: "bhm:dust", color: "#00FFFF", size: 0.12, count: 12, spread: 1.5, yOffset: 1 } },
+        { m: "particle", o: { particle: "bhm:dust_transition", color: "#00FFFF", color2: "#0066CC", count: 12, spread: 1.5, yOffset: 1.5 } },
+        { m: "particle", o: { particle: "bhm:spark", color: "#FFD040", amount: 16, speed: 6, yOffset: 1 }, delay: 10 },
+        { m: "particle", o: { particle: "bhm:smoke", color: "#553366", amount: 6, rise: 1.5 }, delay: 20 },
+        { m: "particle", o: { particle: "bhm:glow", color: "#80E0FF", size: 0.4, lifetime: 30, yOffset: 2.5 }, delay: 30 },
+        { m: "particle", o: { particle: "bhm:flash", color: "#FFFFFF", size: 2 }, delay: 40 },
+        { m: "particle", o: { particle: "bhm:ring", color: "#FF8040", size: 5, lifetime: 12 }, t: "@SelfLocation", delay: 45 },
+        { m: "particle", o: { particle: "bhm:swirl", color: "#B080FF", amount: 40, width: 1.2, rise: 2.5 }, t: "@SelfLocation", delay: 55 },
+        { m: "particleRing", o: { particle: "bhm:glow", color: "#FF3030", size: 0.2, radius: 3, points: 24 }, delay: 65 },
+      ],
+    },
+    // A telegraphed slam: the warning circle shows where it lands, the hit comes 30 ticks later.
+    demo_telegraph: {
+      c: [
+        { m: "telegraph", o: { radius: 3, duration: 30, color: "#FF3030" }, t: "@TargetLocation" },
+        { m: "particle", o: { particle: "bhm:ring", color: "#FF5030", size: 3, lifetime: 8 }, t: "@TargetLocation", delay: 30 },
+        { m: "particle", o: { particle: "bhm:spark", color: "#FF8040", amount: 24 }, t: "@TargetLocation", delay: 30 },
+        { m: "hitbox", o: { onHit: "demo_telegraph_hit", hr: 3, vr: 2 }, t: "@TargetLocation", delay: 30 },
+      ],
+    },
+    demo_telegraph_hit: { m: "damage", o: { amount: 6 } },
     on_combat: { tr: "onCombat", m: "actionBar", o: { text: "§cThe Test Boss notices you" }, t: "@trigger" },
     on_kill_player: { tr: "onKillPlayer", m: "message", o: { text: "§c<trigger.name> was defeated by <caster.name>" }, t: "@PlayersInRadius{r=48}" },
     on_load: { tr: "onLoad", m: "particle", o: { particle: "minecraft:totem_particle", count: 3 } },

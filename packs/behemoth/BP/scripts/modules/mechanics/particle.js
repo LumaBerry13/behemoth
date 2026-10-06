@@ -1,11 +1,13 @@
 // Spawns a particle at each target (entities: at their location + yOffset).
-// o: { particle, count?=1, spread?=0, yOffset?=0, vars? }
+// o: { particle, count?=1, spread?=0, yOffset?=0, vars?, + particle library options
+//      (color, color2, size, lifetime, speed, amount, rise, width — see shared/particle_vars.js) }
+import { particleVars, particleOptionErrors } from "../shared/particle_vars.js";
 /** @type {import("../../types/config").Mechanic} */
 export default {
   name: "particle",
   defaultTargeter: "@self",
   validate(o) {
-    return typeof o.particle === "string" ? [] : ["`particle` id is required"];
+    return [...(typeof o.particle === "string" ? [] : ["`particle` id is required"]), ...particleOptionErrors(o)];
   },
   execute(ctx, targets, o) {
     const a = ctx.services.adapter;
@@ -24,6 +26,6 @@ export default {
         });
       }
     }
-    a.spawnParticles(ctx.boss.dimension, o.particle, locs, o.vars);
+    a.spawnParticles(ctx.boss.dimension, o.particle, locs, particleVars(o));
   },
 };

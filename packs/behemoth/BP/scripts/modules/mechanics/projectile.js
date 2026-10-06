@@ -17,8 +17,9 @@
 //      startY?=1.5, startForward?=0, startSide?=0, targetY?, origin?, toward?,
 //      hugSurface?=false, stopAtEntity?=true, stopAtBlock?=true,
 //      hitPlayers?=true, hitNonPlayers?=false, tickInterval?=1, homing?=0,
-//      onStart?, onTick?, onHit?, onEnd? }
+//      onStart?, onTick?, onHit?, onEnd?, particleOptions? (color, size, lifetime... for `particle`) }
 import { normalize, rotateYaw } from "../../core/vec.js";
+import { particleVars, particleOptionErrors } from "../shared/particle_vars.js";
 
 const SKILL_KEYS = ["onStart", "onTick", "onHit", "onEnd"];
 
@@ -31,6 +32,7 @@ export default {
     for (const k of SKILL_KEYS) {
       if (o[k] !== undefined && (typeof o[k] !== "string" || !vctx.config.skills[o[k]])) errors.push(`\`${k}\` skill "${o[k]}" is not defined`);
     }
+    if (o.particleOptions !== undefined) errors.push(...particleOptionErrors(o.particleOptions).map((e) => `particleOptions: ${e}`));
     if (o.particle === undefined && o.bullet === undefined && o.onTick === undefined) errors.push("needs `particle`, `bullet` or `onTick`");
     if (o.bullet !== undefined && (typeof o.bullet !== "string" || !o.bullet.includes(":"))) errors.push("`bullet` must be a namespaced entity id");
     for (const k of ["speed", "range", "maxTicks", "radius", "verticalRadius", "tickInterval"]) {
@@ -101,6 +103,7 @@ function launch(ctx, target, o, originTarget) {
     },
   };
   const maxTicks = o.maxTicks ?? 200;
+  const pvars = o.particleOptions ? particleVars(o.particleOptions) : undefined;
   const tickInterval = o.tickInterval ?? 1;
   const hit = new Set();
 
@@ -157,7 +160,7 @@ function launch(ctx, target, o, originTarget) {
     p.travelled += Math.hypot(p.vel.x, p.vel.y, p.vel.z);
     p.ticks++;
 
-    if (o.particle) a.spawnParticles(dim, o.particle, [pos]);
+    if (o.particle) a.spawnParticles(dim, o.particle, [pos], pvars);
     if (bullet?.isValid) a.teleport(bullet, pos, { x: pos.x + p.vel.x, y: pos.y + p.vel.y, z: pos.z + p.vel.z });
     if (o.onTick && p.ticks % tickInterval === 0) castAt(o.onTick, [a.location(pos)]);
     if (p.ended) return; // an onTick skill may end it

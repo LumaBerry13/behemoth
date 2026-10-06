@@ -140,6 +140,7 @@ import swap from "../modules/mechanics/swap.js";
 import forcePull from "../modules/mechanics/force_pull.js";
 import command from "../modules/mechanics/command.js";
 import suicide from "../modules/mechanics/suicide.js";
+import telegraph from "../modules/mechanics/telegraph.js";
 
 import self from "../modules/targeters/self.js";
 import target from "../modules/targeters/target.js";
@@ -276,6 +277,7 @@ export function bindModules(sm) {
   sm.bind("forcePull", forcePull);
   sm.bind("command", command);
   sm.bind("suicide", suicide);
+  sm.bind("telegraph", telegraph);
 
   sm.bindTargeter("self", self);
   sm.bindTargeter("target", target);

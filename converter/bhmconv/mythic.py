@@ -190,7 +190,7 @@ MM_PARTICLES = {
     "explosion": "minecraft:large_explosion", "explosion_large": "minecraft:large_explosion",
     "explosion_huge": "minecraft:huge_explosion_emitter", "explosion_emitter": "minecraft:huge_explosion_emitter",
     "crit": "minecraft:critical_hit_emitter", "crit_magic": "minecraft:critical_hit_emitter",
-    "reddust": "minecraft:redstone_wire_dust_particle", "dust": "minecraft:redstone_wire_dust_particle",
+    "reddust": "bhm:dust", "dust": "bhm:dust", "redstone": "bhm:dust", "dust_color_transition": "bhm:dust_transition",
     "portal": "minecraft:portal_directional", "cloud": "minecraft:evaporation_elephant_toothpaste_vapor_particle",
     "poof": "minecraft:evaporation_elephant_toothpaste_vapor_particle",
     "heart": "minecraft:heart_particle", "villager_happy": "minecraft:villager_happy",
@@ -200,7 +200,7 @@ MM_PARTICLES = {
     "witch": "minecraft:witchspell_emitter", "snowball": "minecraft:snowflake_particle",
     "end_rod": "minecraft:endrod", "totem": "minecraft:totem_particle", "sonic_boom": "minecraft:sonic_explosion",
     "sweep_attack": "minecraft:critical_hit_emitter", "block_crack": "minecraft:basic_smoke_particle",
-    "flash": "minecraft:knockback_roar_particle",
+    "flash": "bhm:flash", "glow": "bhm:glow", "electric_spark": "bhm:spark", "wax_on": "bhm:spark",
 }
 DEFAULT_PARTICLE = "minecraft:basic_flame_particle"
 
@@ -289,6 +289,41 @@ def _particle(ctx: "Context", name: Any, where: str) -> str:
         return MM_PARTICLES[n]
     ctx.note(where, f"particle '{name}' has no Bedrock mapping; using {DEFAULT_PARTICLE} (job \"particles\" can map it)")
     return DEFAULT_PARTICLE
+
+
+def _mm_color(v: Any) -> str | None:
+    """MythicMobs colour ("#00ffff", "00ffff" or "255,0,0") → "#RRGGBB"."""
+    s = str(v).strip().strip("\"'")
+    if re.fullmatch(r"#?[0-9a-fA-F]{6}", s):
+        return "#" + s.lstrip("#").upper()
+    parts = [x.strip() for x in s.split(",")]
+    if len(parts) == 3 and all(x.isdigit() for x in parts):
+        return "#" + "".join(f"{min(255, int(x)):02X}" for x in parts)
+    return None
+
+
+def _particle_opts(ctx: "Context", o: dict[str, Any], where: str) -> dict[str, Any]:
+    """`particle` plus the framework particle library options (colour, size) when the
+    MythicMobs particle maps to a bhm:* particle (dust, dust_color_transition, ...)."""
+    pid = _particle(ctx, _opt(o, "particle", "p", default="flame"), where)
+    out: dict[str, Any] = {"particle": pid}
+    if not pid.startswith("bhm:"):
+        return out
+    for key, mm in (("color", ("color", "c")), ("color2", ("color2", "tocolor", "c2"))):
+        raw = _opt(o, *mm)
+        if raw is None:
+            continue
+        col = _mm_color(raw)
+        if col:
+            out[key] = col
+        else:
+            ctx.note(where, f"particle colour '{raw}' could not be read; default colour used")
+    if pid in ("bhm:dust", "bhm:dust_transition") and "color" not in out:
+        out["color"] = "#FF0000"  # MythicMobs dust defaults to red
+    size = _opt(o, "size", "s")
+    if isinstance(size, (int, float)) and size > 0 and pid in ("bhm:dust", "bhm:dust_transition", "bhm:glow", "bhm:spark"):
+        out["size"] = round(float(size) * 0.1, 3)  # MythicMobs dust size 1 ≈ 0.1 blocks [VERIFY by eye]
+    return out
 
 
 def _ident(where: str) -> str:
@@ -799,20 +834,20 @@ def translate_line(sl: SkillLine, ctx: Context, where: str) -> dict[str, Any] | 
     elif n in ("projectile", "missile"):
         line = _projectile(sl, ctx, where, n)
     elif n in ("particle", "effect:particle", "e:p"):
-        line = {"m": "particle", "o": {"particle": _particle(ctx, _opt(o, "particle", "p", default="flame"), where),
+        line = {"m": "particle", "o": {**_particle_opts(ctx, o, where),
                                         "count": int(_opt(o, "amount", "a", default=1)),
                                         "spread": float(_opt(o, "hspread", "hs", "spread", default=0)),
                                         "yOffset": float(_opt(o, "yoffset", "y", default=0))}}
     elif n in ("particlering", "effect:particlering", "e:pr"):
-        line = {"m": "particleRing", "o": {"particle": _particle(ctx, _opt(o, "particle", "p", default="flame"), where),
+        line = {"m": "particleRing", "o": {**_particle_opts(ctx, o, where),
                                             "radius": float(_opt(o, "radius", "r", default=3)),
                                             "points": min(128, int(_opt(o, "points", "pt", "amount", "a", default=16)))}}
     elif n in ("particlesphere", "effect:particlesphere", "e:ps"):
-        line = {"m": "particleSphere", "o": {"particle": _particle(ctx, _opt(o, "particle", "p", default="flame"), where),
+        line = {"m": "particleSphere", "o": {**_particle_opts(ctx, o, where),
                                               "radius": float(_opt(o, "radius", "r", default=2)),
                                               "points": min(200, int(_opt(o, "amount", "a", "points", default=40)))}}
     elif n in ("particleline", "effect:particleline", "e:pl"):
-        line = {"m": "particleLine", "o": {"particle": _particle(ctx, _opt(o, "particle", "p", default="flame"), where),
+        line = {"m": "particleLine", "o": {**_particle_opts(ctx, o, where),
                                             "density": round(1 / max(0.05, float(_opt(o, "distancebetween", "db", default=0.25))), 2)}}
     elif n in ("setvariable", "setvar"):
         so: dict[str, Any] = {"name": _var(_opt(o, "variable", "var", "name")), "value": _opt(o, "value", "val", "v", default=0)}
