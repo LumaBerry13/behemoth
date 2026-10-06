@@ -220,7 +220,11 @@ export class BossManager {
       const boss = this.instances.get(dead.id);
       if (boss) this.handleDeath(boss, killer, cause);
       // Players leave every threat table when they die.
-      if (Adapter.isPlayer(dead)) for (const b of this.instances.values()) b.threat.drop(dead.id);
+      if (Adapter.isPlayer(dead)) {
+        const k = killer ? this.instances.get(killer.id) : undefined;
+        if (k && !k.dead) bus.emit("killPlayer", { boss: k, triggerEntity: dead, data: { cause } });
+        for (const b of this.instances.values()) b.threat.drop(dead.id);
+      }
     });
 
     // Custom death driven by the entity JSON (fatal damage_sensor → death animation → despawn).
@@ -274,6 +278,7 @@ export class BossManager {
       boss.setSpeed(boss.speedMult);
       boss.applyDisplay();
       Log.debug(`resumed ${entity.typeId} (${entity.id}) in phase ${boss.phase}`);
+      this.services.bus.emit("load", { boss });
       return boss;
     }
 

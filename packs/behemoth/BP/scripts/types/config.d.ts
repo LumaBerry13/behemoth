@@ -124,6 +124,8 @@ export interface BossConfig {
   };
   /** Initial caster-scope variables (MythicMobs mob `Variables`). */
   variables?: Record<string, number | string | boolean>;
+  /** Starts (and resets to) invulnerable: every hit is cancelled (MythicMobs Invincible; effect entities). */
+  invulnerable?: boolean;
   /** Keep this entity on Peaceful difficulty (default false: removed, D6). */
   allowPeaceful?: boolean;
   /** Where drops go (D7): "chest" (default) = a loot chest where the boss died, protected from explosions; "ground" = item entities. */

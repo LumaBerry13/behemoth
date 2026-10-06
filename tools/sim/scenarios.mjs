@@ -697,5 +697,108 @@ console.log("\n29. D7: loot goes into a chest that explosions cannot destroy");
   }
 }
 
+console.log("\n30. common MythicMobs mechanics, targeters, conditions");
+{
+  const d = demo();
+  if (!d) check("skipped (demo pack not loaded)", true);
+  else {
+    let out = d.run("demo_explosion", 2);
+    check("explosion at the target, no block damage, boss as source", d.has(out, "explosion", "(0, 64, 5) r2 by bhm_demo:test_boss") && !d.has(out, "explosion", "breaks"));
+    out = d.run("demo_shoot", 12);
+    check("shoot: 3 arrows (repeat 2)", d.count(out, "spawn", "minecraft:arrow") === 3);
+    const p2 = new mc.Player("Mover", dim, { x: 6, y: 64, z: 6 });
+    d.boss.threat.add(p2, 100);
+    d.boss.targetCacheTick = -1;
+    d.player.location = { x: 0, y: 64, z: -20 }; // out of the missile's way
+    d.run("demo_missile", 3);
+    p2.location = { x: -6, y: 64, z: 6 }; // the target moves away sideways
+    mc.tick(60);
+    check("missile (homing) follows a moving target and hits it", p2.health.currentValue < 20, `hp=${p2.health.currentValue}`);
+    p2.remove();
+    d.player.location = { x: 0, y: 64, z: 5 };
+    d.boss.threat.clear();
+    out = d.run("demo_jump", 2);
+    check("jump", d.has(out, "impulse", "bhm_demo:test_boss (0, 0.9, 0)"));
+    const p3 = new mc.Player("Taunter", dim, { x: 3, y: 64, z: 0 });
+    services.executor.castByName(d.boss, "demo_taunt", { triggerEntity: p3 }, { force: true });
+    d.boss.targetCacheTick = -1;
+    check("threat taunt makes the trigger the target", d.boss.getTarget()?.id === p3.id);
+    p3.remove();
+    d.boss.threat.clear();
+    d.boss.targetCacheTick = -1;
+    out = d.run("demo_line", 2);
+    check("@Line: a point every block to the target", d.count(out, "particle", "basic_flame") === 5);
+    out = d.run("demo_ring_players", 2);
+    check("@PlayersInRing finds the player 5 blocks away", d.has(out, "actionbar", "P: §7You are 3–12"));
+    out = d.run("demo_near_target", 2);
+    check("@RandomLocationsNearTarget: 2 strikes", d.count(out, "lightning") === 2);
+    out = d.run("demo_spawn_point", 2);
+    check("@Spawn", d.has(out, "particle", "totem_particle @ (0, 64, 0)"));
+    d.player.location = { x: 0, y: 64, z: 9 };
+    d.run("demo_force_pull", 2);
+    check("forcePull brings the player next to the boss", Math.hypot(d.player.location.x, d.player.location.z) <= 1.5);
+    d.player.location = { x: 0, y: 64, z: 5 };
+    d.run("demo_swap", 2);
+    check("swap", d.e.location.z === 5 && d.player.location.z === 0);
+    d.e.location = { x: 0, y: 64, z: 0 };
+    d.player.location = { x: 0, y: 64, z: 5 };
+    out = d.run("demo_command", 2);
+    check("command runs as the boss with placeholders", d.has(out, "command", "say §cTest Boss has 100% health"));
+    d.run("demo_half_health", 2);
+    check("setHealth 50%", d.e.health.currentValue === 150);
+    out = d.run("demo_target_checks", 2, { inherited: [d.player] });
+    check("isPlayer/onGround/onFire/crouching/sprinting/entityType/hasEffect pass", d.has(out, "actionbar", "Target checks passed"));
+    d.player.isSneaking = true;
+    out = d.run("demo_target_checks", 2, { inherited: [d.player] });
+    check("…and fail when one doesn't hold (crouching)", !d.has(out, "actionbar", "Target checks passed"));
+    d.player.isSneaking = false;
+    d.player.addEffect("slowness", 100);
+    out = d.run("demo_target_checks", 2, { inherited: [d.player] });
+    check("…(hasEffect)", !d.has(out, "actionbar", "Target checks passed"));
+  }
+}
+
+console.log("\n31. triggers: onCombat, onDropCombat, onChangeTarget, onKillPlayer, onLoad");
+{
+  clearWorld();
+  if (!services.bosses.configs.get(DEMO)?.skills.has("on_combat")) check("skipped (demo pack not loaded)", true);
+  else {
+    const seen = [];
+    for (const ev of ["combat", "dropCombat", "changeTarget"]) services.bus.on(ev, (x) => seen.push(`${ev}:${x.triggerEntity?.name ?? "-"}`));
+    const e = new mc.Entity(DEMO, dim, { x: 0, y: 64, z: 0 }, { health: 300 });
+    mc.world.afterEvents.entitySpawn.fire({ entity: e, cause: "Spawned" });
+    mc.tick(2);
+    const start = mc.log.length;
+    const a = new mc.Player("A", dim, { x: 0, y: 64, z: 5 });
+    mc.tick(2);
+    check("onCombat when a player comes near", seen.includes("combat:A") && mc.log.slice(start).some(([, k, x]) => k === "actionbar" && x.includes("notices you")));
+    const b = new mc.Player("B", dim, { x: 0, y: 64, z: 2 });
+    mc.tick(2);
+    check("onChangeTarget to the nearer player", seen.includes("changeTarget:B"));
+    a.remove();
+    b.remove();
+    mc.tick(2);
+    check("onDropCombat when nobody is left", seen.includes("dropCombat:-"));
+    const victim = new mc.Player("Victim", dim, { x: 0, y: 64, z: 3 });
+    mc.tick(1);
+    const s2 = mc.log.length;
+    services.adapter.applyDamage(victim, 100, e); // a skill hit (vanilla melee from bosses is cancelled)
+    mc.tick(2);
+    check("onKillPlayer with <trigger.name>", mc.log.slice(s2).some(([, k, x]) => k === "chat" && x.includes("Victim was defeated by §cTest Boss")));
+    // A boss whose chunk unloads and loads again resumes from its saved state: onLoad, not onSpawn.
+    const boss = services.bosses.get(e.id);
+    services.bosses.save(boss);
+    boss.destroy();
+    services.bosses.instances.delete(e.id);
+    new mc.Player("Watcher", dim, { x: 0, y: 64, z: 20 }); // particles are only drawn near players
+    const s3 = mc.log.length;
+    mc.world.afterEvents.entityLoad.fire({ entity: e });
+    mc.tick(2);
+    const after = mc.log.slice(s3);
+    check("onLoad fires on a resumed boss", after.some(([, k, x]) => k === "particle" && x.includes("totem_particle")));
+    check("…and onSpawn does not", !after.some(([, k, x]) => k === "sound" && x.includes("wither.spawn")));
+  }
+}
+
 console.log(failures ? `\n[scenarios] ${failures} FAILED` : "\n[scenarios] all passed");
 process.exit(failures ? 1 : 0);

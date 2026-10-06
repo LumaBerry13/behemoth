@@ -69,13 +69,15 @@ export class BossInstance {
     /** True while the boss holds position because its target is within ai.stopDistance. */
     this.holding = false;
     /** Script-level invulnerability (all incoming damage cancelled). */
-    this.invulnerable = false;
+    this.invulnerable = !!this.config.invulnerable;
     /** Ticks without any targetable player in range (for ai.resetAfterNoPlayers). */
     this.noPlayerTicks = 0;
     /** @type {Map<string, Map<string, number>>} hitbox key → entity id → tick it can be hit again */
     this.hitCooldowns = new Map();
     /** @type {Entity | undefined} last entity that damaged the boss */
     this.lastAttacker = undefined;
+    /** Target id seen last tick (onCombat / onDropCombat / onChangeTarget). @type {string | undefined} */
+    this.combatTargetId = undefined;
 
     this.age = 0;
     this.spawnPoint = Adapter.location(entity.location);
@@ -155,11 +157,25 @@ export class BossInstance {
     this.lastLocation = Adapter.location(this.entity.location);
     this.dimensionId = this.entity.dimension.id;
     if (this.stunUntil && this.services.scheduler.tick >= this.stunUntil) this.endStun();
+    this.trackCombat();
     this.faceTarget();
     this.updateHold();
     if (this.age % 20 === 0) this.checkReset();
     if (this.age % 100 === 0) this.updateHealthScale(false);
     this.services.bus.emit("tick", { boss: this, data: { age: this.age } });
+  }
+
+  /** Fire combat / dropCombat / changeTarget when the current target changes. */
+  trackCombat() {
+    const t = this.getTarget();
+    const id = t?.id;
+    if (id === this.combatTargetId) return;
+    const before = this.combatTargetId;
+    this.combatTargetId = id;
+    const bus = this.services.bus;
+    if (!before && t) bus.emit("combat", { boss: this, triggerEntity: t });
+    if (before && !t) bus.emit("dropCombat", { boss: this });
+    if (t) bus.emit("changeTarget", { boss: this, triggerEntity: t, data: { previous: before } });
   }
 
   /**
@@ -313,7 +329,7 @@ export class BossInstance {
     this.stunPrev = undefined;
     this.updateHealthScale(true);
     this.gcdUntil = 0;
-    this.invulnerable = false;
+    this.invulnerable = !!this.config.invulnerable;
     this.facingLocked = false;
     this.setSpeed(1);
     this.setAiMode(this.config.ai?.default ?? "chase");

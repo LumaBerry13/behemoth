@@ -67,11 +67,17 @@ export class Entity {
     this.movement.setCurrentValue = (v) => { this.movement.currentValue = v; return true; };
     this.height = opts.height ?? 1.8;
     this.living = opts.living ?? true;
+    this.isOnGround = true;
+    this.isSneaking = false;
+    this.isSprinting = false;
+    this.effects = new Map();
+    this.burning = false;
     dimension.entities.push(this);
   }
   getComponent(id) {
     if (id === "minecraft:health") return this.living ? this.health : undefined;
     if (id === "minecraft:movement") return this.movement;
+    if (id === "minecraft:onfire") return this.burning ? { onFireTicksRemaining: 20 } : undefined;
     return undefined;
   }
   hasComponent(id) { return !!this.getComponent(id); }
@@ -95,8 +101,10 @@ export class Entity {
   clearVelocity() { this.velocity = { x: 0, y: 0, z: 0 }; }
   applyImpulse(v) { note("impulse", `${this.typeId} ${fmt(v)}`); }
   applyKnockback(h, vy) { note("knockback", `${this.typeId} ${fmt({ x: h.x, y: vy, z: h.z })}`); }
-  setOnFire(sec) { note("fire", `${this.typeId} ${sec}s`); return true; }
-  addEffect(eff, ticks, o) { note("effect", `${this.typeId} ${eff} ${ticks}t amp${o?.amplifier ?? 0}`); }
+  setOnFire(sec) { note("fire", `${this.typeId} ${sec}s`); this.burning = true; return true; }
+  addEffect(eff, ticks, o) { note("effect", `${this.typeId} ${eff} ${ticks}t amp${o?.amplifier ?? 0}`); this.effects.set(eff, { duration: ticks }); }
+  getEffect(eff) { return this.effects.get(eff); }
+  runCommand(cmd) { note("command", `${this.typeId}: ${cmd}`); return { successCount: 1 }; }
   teleport(loc) { note("teleport", `${this.typeId} → ${fmt(loc)}`); this.location = { ...loc }; }
   applyDamage(amount, opts) {
     if (!this.isValid || !this.living) return false;
@@ -186,7 +194,9 @@ class Dimension {
     return undefined;
   }
   /** Explosion: fires the before-event, then turns the remaining blocks to air. */
-  createExplosion(loc, radius) {
+  createExplosion(loc, radius, o = {}) {
+    note("explosion", `${fmt(loc)} r${radius}${o.breaksBlocks ? " breaks" : ""}${o.source ? ` by ${o.source.typeId}` : ""}`);
+    if (!o.breaksBlocks && o.source) return true; // a skill explosion: no block damage modelled
     const blocks = [];
     for (let x = -radius; x <= radius; x++) for (let y = -radius; y <= radius; y++) for (let z = -radius; z <= radius; z++) {
       if (Math.hypot(x, y, z) <= radius) blocks.push(this.getBlock({ x: loc.x + x, y: loc.y + y, z: loc.z + z }));

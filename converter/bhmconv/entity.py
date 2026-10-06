@@ -112,8 +112,13 @@ def movement_speed(behavior: dict) -> float | None:
     return float(v) if isinstance(v, (int, float)) else None
 
 
+TINT_PROPERTY = {"type": "int", "range": [0, 16777215], "default": 16777215, "client_sync": True}
+
+
 def patch_behavior(behavior: dict, idle_states: int, walk_states: int, boss_bar_range: int, notes: list[str],
-                   boss_name: str = "") -> dict:
+                   boss_name: str = "", kind: str = "boss", identifier: str | None = None, tint: bool = False) -> dict:
+    """kind "boss": boss bar + family bhm_boss; "minion": no boss bar, family bhm_minion.
+    identifier renames the entity (several converted mobs sharing one model); tint adds bhm:tint."""
     out = copy.deepcopy(behavior)
     if _version_tuple(out.get("format_version", "0")) < _version_tuple(STUB_FORMAT):
         notes.append(f"behavior format_version {out.get('format_version')} → {STUB_FORMAT} (entity properties)")
@@ -122,6 +127,8 @@ def patch_behavior(behavior: dict, idle_states: int, walk_states: int, boss_bar_
 
     ent = out["minecraft:entity"]
     desc = ent.setdefault("description", {})
+    if identifier:
+        desc["identifier"] = identifier
     props = desc.setdefault("properties", {})
     props.update({
         "bhm:phase": {"type": "int", "range": [0, 15], "default": 1, "client_sync": True},
@@ -130,6 +137,8 @@ def patch_behavior(behavior: dict, idle_states: int, walk_states: int, boss_bar_
         "bhm:idle_state": {"type": "int", "range": [0, max(1, idle_states - 1)], "default": 0, "client_sync": True},
         "bhm:walk_state": {"type": "int", "range": [0, max(1, walk_states - 1)], "default": 0, "client_sync": True},
     })
+    if tint:
+        props["bhm:tint"] = dict(TINT_PROPERTY)
 
     comps = ent.setdefault("components", {})
     for removed, why in (("minecraft:despawn", "bosses never despawn naturally"),
@@ -138,12 +147,17 @@ def patch_behavior(behavior: dict, idle_states: int, walk_states: int, boss_bar_
             del comps[removed]
             notes.append(f"removed {removed}: {why}")
     comps["minecraft:persistent"] = {}
-    comps["minecraft:boss"] = {"should_darken_sky": False, "hud_range": boss_bar_range}
-    if boss_name:
-        comps["minecraft:boss"]["name"] = boss_name
+    if kind == "boss":
+        comps["minecraft:boss"] = {"should_darken_sky": False, "hud_range": boss_bar_range}
+        if boss_name:
+            comps["minecraft:boss"]["name"] = boss_name
+    elif "minecraft:boss" in comps:
+        del comps["minecraft:boss"]
+        notes.append("removed minecraft:boss: minions have no boss bar")
     fam = comps.setdefault("minecraft:type_family", {"family": []}).setdefault("family", [])
-    if "bhm_boss" not in fam:
-        fam.append("bhm_boss")
+    family = "bhm_boss" if kind == "boss" else "bhm_minion"
+    if family not in fam:
+        fam.append(family)
 
     groups = ent.setdefault("component_groups", {})
     for name, g in STUB_GROUPS.items():
@@ -194,9 +208,44 @@ def build_base_controller(boss: str, idle: list[str], walk: list[str]) -> dict:
     }
 
 
-def patch_client_entity(client: dict, boss: str, notes: list[str]) -> dict:
+def tint_controller_id(boss: str) -> str:
+    return f"controller.render.{boss}.bhm_tint"
+
+
+def build_tint_controller(boss: str) -> dict:
+    """Render controller that turns bhm:tint (0xRRGGBB, white = none) into an overlay colour (L37)."""
+    prop = "q.property('bhm:tint')"
+    return {
+        "format_version": "1.8.0",
+        "render_controllers": {
+            tint_controller_id(boss): {
+                "geometry": "Geometry.default",
+                "materials": [{"*": "Material.default"}],
+                "textures": ["Texture.default"],
+                "overlay_color": {
+                    "r": f"math.floor({prop} / 65536) / 255",
+                    "g": f"math.mod(math.floor({prop} / 256), 256) / 255",
+                    "b": f"math.mod({prop}, 256) / 255",
+                    "a": f"{prop} == 16777215 ? 0.0 : 0.6",
+                },
+            }
+        },
+    }
+
+
+def patch_client_entity(client: dict, boss: str, notes: list[str], identifier: str | None = None, tint: bool = False) -> dict:
     out = copy.deepcopy(client)
     desc = out["minecraft:client_entity"]["description"]
+    if identifier:
+        desc["identifier"] = identifier
+    if tint:
+        rcs = desc.get("render_controllers", [])
+        if rcs == ["controller.render.default"]:
+            desc["render_controllers"] = [tint_controller_id(boss)]
+            notes.append(f"client entity: render controller → {tint_controller_id(boss)} (tint overlay from bhm:tint)")
+        else:
+            notes.append(f"client entity: tint used but render controllers {rcs} are custom; add overlay_color from "
+                         f"{tint_controller_id(boss)} to them by hand")
     desc.setdefault("animations", {})["bhm_base"] = base_controller_id(boss)
     scripts = desc.setdefault("scripts", {})
     animate = scripts.setdefault("animate", [])

@@ -35,8 +35,13 @@ def test_generated_config_passes_the_js_validator(out):
     r = subprocess.run([node, str(ROOT / "tools" / "validate.mjs"), "--config", str(cfg)],
                        capture_output=True, text=True, encoding="utf-8")
     assert r.returncode == 0, r.stdout + r.stderr
-    for skill in ("ks_bolt", "ks_storm", "ks_dash", "ks_grab", "ks_pong", "mob_2_onInteract", "mob_3_onSignal"):
-        assert skill in r.stdout
+    for skill in ("ks_bolt", "ks_storm", "ks_dash", "ks_grab", "ks_pong", "mob_2_onInteract", "mob_3_onSignal",
+                  "ks_mind", "ks_angry", "ks_angry_0_entitySkill", "ks_angry_1_onTick", "mob_6_onCombat", "mob_7_onLoad"):
+        assert skill in r.stdout, skill
+    spark = out / "BP" / "scripts" / "bosses" / "kitchen_spark.js"
+    r = subprocess.run([node, str(ROOT / "tools" / "validate.mjs"), "--config", str(spark)],
+                       capture_output=True, text=True, encoding="utf-8")
+    assert r.returncode == 0, r.stdout + r.stderr
 
 
 def test_mapping_details(out):
@@ -44,12 +49,41 @@ def test_mapping_details(out):
     assert 'm: "projectile"' in js and "speed: 0.8" in js          # 16 blocks/s → 0.8 blocks/tick
     assert '"@Ring{radius=5.0;points=4}"' in js
     assert '"@Cone{angle=90.0;r=8.0}"' in js
-    assert '"variable{name=stage;eq=1}"' in js
+    assert '"varEquals{var=stage;val=1}"' in js
     assert '"playersNearby{r=20.0;min=1}"' in js
     assert 'tr: "onSignal:pong"' in js
     assert '"minecraft:heart_particle"' in js
     behavior = json.loads((out / "BP" / "entities" / "kitchen.json").read_text(encoding="utf-8"))
     assert behavior["minecraft:entity"]["components"]["minecraft:boss"]["name"] == "Kitchen Sink"
+
+
+def test_archivist_style_mappings(out):
+    js = (out / "BP" / "scripts" / "bosses" / "kitchen.js").read_text(encoding="utf-8")
+    assert 'variables: { mood: "calm", power: 0 }' in js
+    assert '"varEquals{var=caster.mood;val=angry} castInstead ks_angry"' in js
+    assert '"fieldOfView{angle=90.0;rotation=0.0} orElseCast ks_turn"' in js and "targetIf:" in js
+    assert 'eq: "min(10, x + <caster.var.power> + 1)"' in js
+    assert 'pitch: "<random.float.0.9to1.2>"' in js and "cooldown: 40" in js
+    assert 'tr: "onDamaged"' in js and "chance: 0.5" in js and '"healthPct<50"' in js
+    assert 'bullet: "kitchen:spark"' in js and 'onTick: "ks_angry_1_onTick"' in js
+    assert "repeat: 4" in js and "repeatInterval: 2" in js
+    assert 'type: "kitchen:spark"' in js                       # summon of a mob converted in the same job
+    assert '"@RandomLocationsNearCaster{amount=3;radius=6.0;minRadius=2.0;spacing=2.0}"' in js
+    assert "{ amount: 6 }" in js                               # basedamage 1.5 × Damage 4
+    assert '"!varEquals{var=caster.mood;val=calm}"' in js      # inline ?! condition
+    spark = (out / "BP" / "scripts" / "bosses" / "kitchen_spark.js").read_text(encoding="utf-8")
+    assert 'kind: "minion"' in spark and 'default: "frozen"' in spark and "invulnerable: true" in spark
+    entity = json.loads((out / "BP" / "entities" / "kitchen_spark.json").read_text(encoding="utf-8"))
+    comps = entity["minecraft:entity"]["components"]
+    assert entity["minecraft:entity"]["description"]["identifier"] == "kitchen:spark"
+    assert "minecraft:boss" not in comps and "bhm_minion" in comps["minecraft:type_family"]["family"]
+    boss_entity = json.loads((out / "BP" / "entities" / "kitchen.json").read_text(encoding="utf-8"))
+    assert "bhm:tint" in boss_entity["minecraft:entity"]["description"]["properties"]
+    assert (out / "RP" / "render_controllers" / "kitchen.bhm_tint.render_controllers.json").exists()
+    index = (out / "BP" / "scripts" / "bosses" / "index.js").read_text(encoding="utf-8")
+    assert "export default [kitchen, kitchen_spark]" in index
+    lang = (out / "RP" / "texts" / "en_US.lang").read_text(encoding="utf-8")
+    assert "entity.kitchen:spark.name=Spark" in lang
 
 
 def test_standalone_pack_layout(out):
@@ -71,6 +105,13 @@ def test_refuses_to_overwrite_foreign_folder(tmp_path):
     (tmp_path / "pack" / "mine.txt").write_text("hands off")
     with pytest.raises(SystemExit):
         convert(FIXTURE / "kitchen.job.json", tmp_path / "pack")
+
+
+def test_runtime_version_matches_the_framework():
+    import re
+    main = (ROOT / "packs" / "behemoth" / "BP" / "scripts" / "main.js").read_text(encoding="utf-8")
+    framework = json.loads((ROOT / "connector" / "framework.json").read_text(encoding="utf-8"))
+    assert re.search(r'VERSION = "([^"]+)"', main).group(1) == framework["runtime_version"],         "bump connector/framework.json runtime_version together with main.js VERSION"
 
 
 def test_demo_pack_ships_the_current_connector():

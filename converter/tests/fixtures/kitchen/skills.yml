@@ -56,3 +56,58 @@ ks_poke:
 ks_pong:
   Skills:
   - particle{p=heart;a=5;hs=0.5;y=2} @ThreatTable
+
+# --- variables, placeholders, condition actions, target conditions, inline skills ---
+ks_react:
+  Cooldown: 1
+  Skills:
+  - setvar{var=caster.mood;val=angry;type=STRING;duration=100} @self
+  - variablemath{var=caster.power;eq="min(10, x + <caster.var.power> + 1)"} @self
+  - sound{s=mob.blaze.hit;p="<random.float.0.9to1.2>";cd=2} @self
+  - taunt @trigger
+
+ks_enrage:
+  Skills:
+  - barcreate{name="ks";display="<caster.name> (angry)"} @self
+  - tint{c=#FF6969} @self
+  - tint{c=#FFFFFF;delay=2} @self
+  - explosion{y=2} @selflocation
+  - jump{v=1} @self
+
+ks_greet:
+  Conditions:
+  - incombat true
+  Skills:
+  - sendmessage{m="Welcome <trigger.name>"} @trigger
+
+ks_resume:
+  Skills:
+  - particle{p=heart;a=2} @self
+
+ks_mind:
+  Conditions:
+  - varequals{var=caster.mood;val=angry} castinstead ks_angry
+  - variableisset{var=caster.power} true
+  TargetConditions:
+  - fieldofview{angle=90;r=0} orelsecast ks_turn
+  - onground true
+  Skills:
+  - basedamage{m=1.5} @target
+  - shoot{type=ARROW;v=6} @target
+  - summon{m=kitchen_spark;a=1} @RandomLocationsNearCaster{a=3;r=6;minr=2;s=2}
+
+ks_angry:
+  Skills:
+  - raytraceto{md=20;w=1;entitySkill=[ - damage{a=2} - throw{v=3;vy=2} ];locationSkill=[ - particle{p=explosion} @origin ]} @target
+  - projectile{v=10;oT=[ - modifyprojectile{trait=VELOCITY;action=MULTIPLY;value=1.05} - particle{p=flame} @origin ];oH=ks_bolt_hit;oE=[ - summon{m=kitchen_spark} ];bulletModel=7;md=20} @target
+  - velocity{m=add;x=0.2;r=true;repeat=4;repeati=2} @self
+  - stun{d=20} @self
+  - forcepull @target
+  - swap @target
+  - sethealth{a=100} @self
+  - command{c="say hi"} @self
+  - setrotation{yaw=10;relative=true} @self ?!varequals{var=caster.mood;val=calm}
+
+ks_turn:
+  Skills:
+  - setrotation{yaw=180;relative=true} @self

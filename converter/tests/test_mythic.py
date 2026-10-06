@@ -121,3 +121,50 @@ def test_extra_lines_can_be_disabled():
     apply_tuning(skills, {"extra_lines_enabled": False, "extra_lines": {"a": [{"m": "cameraShake", "o": {}}]}}, ctx(), notes)
     assert skills["a"] == {"m": "damage", "o": {"amount": 1}}
     assert "disabled" in notes[0]
+
+
+def test_inline_conditions_chance_and_health_on_a_line():
+    sl = parse_skill_line("skill{s=a} @self ~onDamaged ?!varequals{var=x;val=1} 0.25 <75%")
+    assert sl.conditions == [("varequals{var=x;val=1}", True)]
+    assert sl.chance == 0.25 and sl.health == "<75%"
+
+
+def test_condition_actions():
+    c = ctx()
+    cl = parse_condition_line("varequals{var=caster.attacking;val=true} castinstead slow")
+    assert cl.action == ("castInstead", "slow")
+    assert translate_condition(cl, c, "x") == ["varEquals{var=caster.attacking;val=true} castInstead slow"]
+    cl = parse_condition_line("distance{d=>10} orelsecast away")
+    assert translate_condition(cl, c, "x", True) == ["distance>10 orElseCast away"]
+
+
+def test_inline_skill_lists_become_generated_skills():
+    c = ctx()
+    line = translate_line(parse_skill_line("totem{oH=[ - damage{a=5} - throw{v=4;vy=10} ];hr=3} @self"), c, "boss_skill[2]")
+    name = line["o"]["onHit"]
+    assert name == "boss_skill_2_onHit"
+    assert [l["m"] for l in c.extra_skills[name]["c"]] == ["damage", "throw"]
+
+
+def test_line_repeat_cooldown_and_placeholders():
+    c = ctx()
+    line = translate_line(parse_skill_line('sound{s=x;p="<random.float.0.9to1.2>";cd=4;repeat=3;repeati=5} @self'), c, "x")
+    assert line["o"]["pitch"] == "<random.float.0.9to1.2>"
+    assert line["cooldown"] == 80 and line["repeat"] == 3 and line["repeatInterval"] == 5
+
+
+def test_world_scope_and_mob_variables():
+    c = ctx()
+    line = translate_line(parse_skill_line("setvar{var=world.count;val=1;type=INTEGER;duration=20}"), c, "x")
+    assert line["o"] == {"name": "global.count", "value": 1, "type": "integer", "duration": 20}
+    out = translate_boss("m", {"Variables": {"a": "int/3", "b": "float/0.5", "c": "string/hi"}, "Skills": []}, {}, c)
+    assert out["variables"] == {"a": 3, "b": 0.5, "c": "hi"}
+
+
+def test_reachability_follows_inline_lists_and_condition_actions():
+    skills = {
+        "a": {"Conditions": ["offgcd castinstead b"], "Skills": ["totem{oH=[ - skill{s=c} ]}"]},
+        "b": {"Skills": ["damage{a=1}"]},
+        "c": {"Skills": ["damage{a=1}"]},
+    }
+    assert set(reachable_skills([parse_skill_line("skill{s=a} ~onSpawn")], skills)) == {"a", "b", "c"}

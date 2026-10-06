@@ -10,12 +10,13 @@
 //   onEnd    where it stops (hit, block, range or time limit)
 // Bullets are bound to the boss (removed if it dies) and removed when the
 // projectile ends. Projectiles keep flying when the casting skill ends; the
-// boss dying or resetting stops them.
+// boss dying or resetting stops them. homing (0-1) steers it toward a moving
+// entity target every tick (MythicMobs missile).
 // o: { particle?, bullet?, speed?=0.8 (blocks/tick), gravity?=0, inertia?=1,
 //      range?=24, maxTicks?=200, radius?=0.8, verticalRadius?=radius,
 //      startY?=1.5, startForward?=0, startSide?=0, targetY?, origin?, toward?,
 //      hugSurface?=false, stopAtEntity?=true, stopAtBlock?=true,
-//      hitPlayers?=true, hitNonPlayers?=false, tickInterval?=1,
+//      hitPlayers?=true, hitNonPlayers?=false, tickInterval?=1, homing?=0,
 //      onStart?, onTick?, onHit?, onEnd? }
 import { normalize, rotateYaw } from "../../core/vec.js";
 
@@ -35,6 +36,7 @@ export default {
     for (const k of ["speed", "range", "maxTicks", "radius", "verticalRadius", "tickInterval"]) {
       if (o[k] !== undefined && (typeof o[k] !== "number" || o[k] <= 0)) errors.push(`\`${k}\` must be > 0`);
     }
+    if (o.homing !== undefined && (typeof o.homing !== "number" || o.homing < 0 || o.homing > 1)) errors.push("`homing` must be 0–1");
     for (const k of ["gravity", "inertia", "startY", "startForward", "startSide", "targetY"]) {
       if (o[k] !== undefined && typeof o[k] !== "number") errors.push(`\`${k}\` must be a number`);
     }
@@ -137,6 +139,15 @@ function launch(ctx, target, o, originTarget) {
       return;
     }
     const pos = p.pos;
+    if (o.homing && a.isEntity(target) && target.isValid) {
+      // Turn part of the way toward the target, keeping the speed.
+      const h = a.getHeadLocation(target);
+      const want = normalize({ x: h.x - pos.x, y: h.y - pos.y, z: h.z - pos.z });
+      const sp = Math.hypot(p.vel.x, p.vel.y, p.vel.z) || p.speed;
+      const k = o.homing;
+      const mixed = normalize({ x: p.vel.x / sp * (1 - k) + want.x * k, y: p.vel.y / sp * (1 - k) + want.y * k, z: p.vel.z / sp * (1 - k) + want.z * k });
+      p.vel = { x: mixed.x * sp, y: mixed.y * sp, z: mixed.z * sp };
+    }
     pos.x += p.vel.x;
     pos.y += p.vel.y;
     pos.z += p.vel.z;

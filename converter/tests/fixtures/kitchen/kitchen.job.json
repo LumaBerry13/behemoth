@@ -33,5 +33,21 @@
       "rp": "00000000-0000-4000-8000-000000000004",
       "rp_module": "00000000-0000-4000-8000-000000000005"
     }
-  }
+  },
+  "bullets": {
+    "7": "kitchen:spark"
+  },
+  "minions": [
+    {
+      "boss": "kitchen_spark",
+      "mob": "kitchen_spark",
+      "behavior": "behavior.json",
+      "client_entity": "entity.json",
+      "geometry": "geo.json",
+      "animations": [
+        "animation.json"
+      ],
+      "identifier": "kitchen:spark"
+    }
+  ]
 }

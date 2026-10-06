@@ -131,6 +131,15 @@ import removeMechanic from "../modules/mechanics/remove.js";
 import stun from "../modules/mechanics/stun.js";
 import tint from "../modules/mechanics/tint.js";
 import modifyProjectile from "../modules/mechanics/modify_projectile.js";
+import explosion from "../modules/mechanics/explosion.js";
+import shoot from "../modules/mechanics/shoot.js";
+import jump from "../modules/mechanics/jump.js";
+import threatMechanic from "../modules/mechanics/threat.js";
+import setHealth from "../modules/mechanics/set_health.js";
+import swap from "../modules/mechanics/swap.js";
+import forcePull from "../modules/mechanics/force_pull.js";
+import command from "../modules/mechanics/command.js";
+import suicide from "../modules/mechanics/suicide.js";
 
 import self from "../modules/targeters/self.js";
 import target from "../modules/targeters/target.js";
@@ -149,6 +158,12 @@ import ringTargeter from "../modules/targeters/ring.js";
 import origin from "../modules/targeters/origin.js";
 import parent from "../modules/targeters/parent.js";
 import randomLocationsNearCaster from "../modules/targeters/random_locations_near_caster.js";
+import mobsInRadius from "../modules/targeters/mobs_in_radius.js";
+import playersInRing from "../modules/targeters/players_in_ring.js";
+import randomLocationsNearTarget from "../modules/targeters/random_locations_near_target.js";
+import lineTargeter from "../modules/targeters/line.js";
+import locationTargeter from "../modules/targeters/location.js";
+import spawnTargeter from "../modules/targeters/spawn.js";
 
 import healthPct from "../modules/conditions/health_pct.js";
 import distanceCondition from "../modules/conditions/distance.js";
@@ -169,6 +184,13 @@ import varEquals from "../modules/conditions/var_equals.js";
 import variableIsSet from "../modules/conditions/variable_is_set.js";
 import directionalVelocity from "../modules/conditions/directional_velocity.js";
 import altitude from "../modules/conditions/altitude.js";
+import onGround from "../modules/conditions/on_ground.js";
+import isPlayer from "../modules/conditions/is_player.js";
+import onFire from "../modules/conditions/on_fire.js";
+import crouching from "../modules/conditions/crouching.js";
+import sprinting from "../modules/conditions/sprinting.js";
+import entityType from "../modules/conditions/entity_type.js";
+import hasEffect from "../modules/conditions/has_effect.js";
 
 import onSpawn from "../modules/triggers/on_spawn.js";
 import onTimer from "../modules/triggers/on_timer.js";
@@ -181,6 +203,11 @@ import onMarker from "../modules/triggers/on_marker.js";
 import onReset from "../modules/triggers/on_reset.js";
 import onInteract from "../modules/triggers/on_interact.js";
 import onSignal from "../modules/triggers/on_signal.js";
+import onCombat from "../modules/triggers/on_combat.js";
+import onDropCombat from "../modules/triggers/on_drop_combat.js";
+import onChangeTarget from "../modules/triggers/on_change_target.js";
+import onKillPlayer from "../modules/triggers/on_kill_player.js";
+import onLoad from "../modules/triggers/on_load.js";
 
 /** @param {SkillManager} sm */
 export function bindModules(sm) {
@@ -240,6 +267,15 @@ export function bindModules(sm) {
   sm.bind("stun", stun);
   sm.bind("tint", tint);
   sm.bind("modifyProjectile", modifyProjectile);
+  sm.bind("explosion", explosion);
+  sm.bind("shoot", shoot);
+  sm.bind("jump", jump);
+  sm.bind("threat", threatMechanic);
+  sm.bind("setHealth", setHealth);
+  sm.bind("swap", swap);
+  sm.bind("forcePull", forcePull);
+  sm.bind("command", command);
+  sm.bind("suicide", suicide);
 
   sm.bindTargeter("self", self);
   sm.bindTargeter("target", target);
@@ -259,6 +295,12 @@ export function bindModules(sm) {
   sm.bindTargeter("Parent", parent);
   sm.bindTargeter("RandomLocationsNearCaster", randomLocationsNearCaster);
   sm.bindTargeter("RLNC", randomLocationsNearCaster);
+  sm.bindTargeter("MobsInRadius", mobsInRadius);
+  sm.bindTargeter("PlayersInRing", playersInRing);
+  sm.bindTargeter("RandomLocationsNearTarget", randomLocationsNearTarget);
+  sm.bindTargeter("Line", lineTargeter);
+  sm.bindTargeter("Location", locationTargeter);
+  sm.bindTargeter("Spawn", spawnTargeter);
 
   sm.bindCondition("healthPct", healthPct);
   sm.bindCondition("distance", distanceCondition);
@@ -279,6 +321,13 @@ export function bindModules(sm) {
   sm.bindCondition("variableIsSet", variableIsSet);
   sm.bindCondition("directionalVelocity", directionalVelocity);
   sm.bindCondition("altitude", altitude);
+  sm.bindCondition("onGround", onGround);
+  sm.bindCondition("isPlayer", isPlayer);
+  sm.bindCondition("onFire", onFire);
+  sm.bindCondition("crouching", crouching);
+  sm.bindCondition("sprinting", sprinting);
+  sm.bindCondition("entityType", entityType);
+  sm.bindCondition("hasEffect", hasEffect);
 
   sm.bindTrigger("onSpawn", onSpawn);
   sm.bindTrigger("onTimer", onTimer);
@@ -291,4 +340,9 @@ export function bindModules(sm) {
   sm.bindTrigger("onReset", onReset);
   sm.bindTrigger("onInteract", onInteract);
   sm.bindTrigger("onSignal", onSignal);
+  sm.bindTrigger("onCombat", onCombat);
+  sm.bindTrigger("onDropCombat", onDropCombat);
+  sm.bindTrigger("onChangeTarget", onChangeTarget);
+  sm.bindTrigger("onKillPlayer", onKillPlayer);
+  sm.bindTrigger("onLoad", onLoad);
 }

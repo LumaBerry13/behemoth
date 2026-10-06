@@ -10,4 +10,4 @@ MythicMobs YAML into everything the Behemoth runtime needs:
 * a conversion report listing everything skipped or approximated
 """
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"

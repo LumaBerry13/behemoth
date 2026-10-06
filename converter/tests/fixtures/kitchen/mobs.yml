@@ -3,6 +3,10 @@ kitchen_boss:
   Type: ZOMBIE
   Display: 'Kitchen Sink'
   Health: 150
+  Damage: 4
+  Variables:
+    mood: string/calm
+    power: float/0
   DamageModifiers:
   - FALL 0
   Options:
@@ -14,3 +18,21 @@ kitchen_boss:
   - skill{s=ks_rotation} @target ~onTimer:40
   - skill{s=ks_poke} @trigger ~onInteract
   - skill{s=ks_pong} @self ~onSignal:pong
+  - skill{s=ks_react} @trigger ~onDamaged 0.5
+  - skill{s=ks_enrage} @self ~onDamaged <50%
+  - skill{s=ks_greet} @trigger ~onCombat
+  - skill{s=ks_resume} @self ~onLoad
+  - skill{s=ks_mind} @target ~onTimer:20
+
+# A made-up effect mob summoned by the boss (converted in the same job as a minion).
+kitchen_spark:
+  Type: ARMOR_STAND
+  Display: 'Spark'
+  Health: 5
+  Options:
+    NoAI: true
+    Invincible: true
+  Skills:
+  - matchrotation @parent ~onSpawn
+  - remove{delay=40} @self ~onSpawn
+  - damage{a=1} @PlayersInRadius{r=1} ~onTimer:10

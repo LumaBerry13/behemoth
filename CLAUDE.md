@@ -53,6 +53,7 @@ Persistent context for Claude Code sessions. The **single source of truth** is
 - Boss configs are **plain JSON data** (they cross packs): no functions. `schemaVersion` required.
 - Deliver complete, runnable files — no partial snippets, no leftover debug output.
 - New platform limit → row in design doc §3. Decision → [DECIDED] in the matching section, as-of date updated.
+- Framework `main.js` VERSION = `connector/framework.json` `runtime_version` (test-enforced); converted packs and the demo pack use it as `minFramework`. Bump both when boss packs need new framework features.
 - **Never change the framework's manifest UUIDs** (`packs/behemoth/*/manifest.json`, mirrored in `connector/framework.json`): every boss pack depends on them. Bump versions instead; bump the protocol (`PROTOCOL` in Registrar + connector) only for breaking wire changes.
 - `connector/connector.js` is canonical; the demo pack and converter output must carry an identical copy (tested).
 
@@ -127,6 +128,8 @@ MythicMobs → Behemoth translation rules (converter `mythic.py`):
 - Job `blades: [bone]` → `<bone>_tip` baked; totems become hilt→tip capsules (`hitbox{to}`), summons land at the tip; YAML offsets on blades dropped.
 - `totem` → `hitbox` (`ti` = re-hit interval [VERIFY]); `throw`/`pull` velocities ÷10 [VERIFY]; projectile `v` blocks/second → /20 per tick [VERIFY]; `potion level` = amplifier; Java particle names via `MM_PARTICLES` (+ job `particles`).
 - `model`, `BodyClamp`, `CancelEvent` skipped; unreachable metaskills not converted. Everything dropped/approximated is in `<boss>.report.md` — read it after every conversion.
+- Job `minions`: other mobs of the same pack (minions, effect mobs) converted alongside the boss — same keys as the boss (`boss`, `mob`, `behavior`, `client_entity`, `geometry`, `animations`, `textures`, …) plus optional `identifier` (several mobs can share one model). Summons of them map automatically; MM `NoAI` → `ai.default: "frozen"`, `Invincible` → config `invulnerable`. Job `bullets`: projectile `bulletModel`/`bulletMaterial` → entity id flown by `projectile{bullet}`.
+- Converter also maps: inline skill lists (`oH=[ - … ]` → generated skills `<skill>_<n>_<key>`), `?`/`?!` inline conditions, line chance, `<N%` mob-line health modifiers, `castinstead`/`orelsecast`, `TargetConditions` → `targetIf`, mob `Variables`, `world.` → `global.` scope, `repeat`/`repeati`, per-mechanic `cd` (seconds → line `cooldown`), `basedamage` (× mob `Damage`), relative velocity (x mirrored [VERIFY]). Options keep `<placeholders>` (never float() them: use `_num`).
 - Job `pack` = name/id/version + UUIDs (generated once, written back to the job — never regenerate them). Job `tuning` = Bedrock-side tweaks (stop_distance, damage_multiplier, ignore_difficulty, randomskill_mode, trigger_overrides, extra_lines + extra_lines_enabled, leash_range, reset_after_no_players). Dark Knight camera shakes are defined but DISABLED (owner, 2026-10-05).
 
 ## Behemoth-ready entity stub (design doc §5)

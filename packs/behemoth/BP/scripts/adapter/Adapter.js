@@ -536,6 +536,41 @@ export const Adapter = {
     }
   },
 
+  /**
+   * Vanilla explosion. Block damage only with breaksBlocks (and mobGriefing,
+   * checked by the caller).
+   * @param {Dimension} dim @param {Vector3} loc @param {number} radius
+   * @param {{ breaksBlocks?: boolean, causesFire?: boolean, source?: Entity }} [opts]
+   */
+  createExplosion(dim, loc, radius, opts = {}) {
+    try {
+      return dim.createExplosion(loc, radius, {
+        breaksBlocks: !!opts.breaksBlocks,
+        causesFire: !!opts.causesFire,
+        ...(opts.source?.isValid ? { source: opts.source } : {}),
+      });
+    } catch {
+      return false;
+    }
+  },
+
+  /**
+   * Spawn a vanilla projectile entity (arrow, fireball, ...) and shoot it.
+   * @param {Dimension} dim @param {string} typeId @param {Vector3} loc @param {Vector3} velocity @param {Entity} [owner]
+   */
+  shootProjectile(dim, typeId, loc, velocity, owner) {
+    const e = this.spawnEntity(dim, typeId, loc);
+    if (!e) return undefined;
+    const p = e.getComponent("minecraft:projectile");
+    if (!p) {
+      e.applyImpulse(velocity);
+      return e;
+    }
+    if (owner?.isValid) p.owner = owner;
+    p.shoot(velocity);
+    return e;
+  },
+
   /** @param {Dimension} dim @param {string} sound @param {Vector3} loc @param {number} [volume] @param {number} [pitch] */
   playSound(dim, sound, loc, volume = 1, pitch = 1) {
     try {
@@ -730,6 +765,40 @@ export const Adapter = {
   /** @param {Entity} e */
   remove(e) {
     if (e.isValid) e.remove();
+  },
+  /** Run a command as the entity (MythicMobs `command` with the caster as sender). @param {Entity} e @param {string} cmd */
+  runCommand(e, cmd) {
+    if (!e.isValid) return false;
+    try {
+      return e.runCommand(cmd).successCount > 0;
+    } catch {
+      return false; // syntax error or not allowed
+    }
+  },
+  /** @param {Entity} e */
+  isOnGround(e) {
+    return e.isValid && e.isOnGround;
+  },
+  /** @param {Entity} e */
+  isSneaking(e) {
+    return e.isValid && e.isSneaking;
+  },
+  /** @param {Entity} e */
+  isSprinting(e) {
+    return e.isValid && e.isSprinting;
+  },
+  /** @param {Entity} e */
+  isOnFire(e) {
+    return e.isValid && e.getComponent("minecraft:onfire") !== undefined;
+  },
+  /** @param {Entity} e @param {string} effect e.g. "slowness" */
+  hasEffect(e, effect) {
+    if (!e.isValid) return false;
+    try {
+      return e.getEffect(effect) !== undefined;
+    } catch {
+      return false; // unknown effect id
+    }
   },
   /** @param {Entity} e */
   hasHealth(e) {

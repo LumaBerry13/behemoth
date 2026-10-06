@@ -51,10 +51,10 @@ also comes with a Python converter that turns MythicMobs + ModelEngine bosses in
 
 | Kind | Modules |
 | --- | --- |
-| Mechanics | **Combat:** `damage`, `percentDamage`, `heal`, `potion`, `ignite`, `lightning`, `throw`, `knockback`, `pull`, `shieldBreak`, `invulnerable`, `hitbox`, `projectile` · **Movement:** `leap`, `lunge`, `propel`, `velocity`, `teleport`, `teleportBehind`, `setSpeed`, `setAI`, `lockFacing` · **Visual/audio:** `state`, `baseState`, `particle`, `particleRing`, `particleSphere`, `particleLine`, `sound`, `cameraShake`, `setProperty`, `message`, `title`, `actionBar` · **World:** `summon`, `remove`, `tempBlocks` · **Flow:** `delay`, `waitMarker`, `skill`, `randomSkill`, `aura`, `gcd`, `phase`, `setVariable`, `variableMath`, `signal`, `addTag`, `removeTag` · **Other:** `rayTraceTo`, `modifyProjectile`, `setRotation`, `matchRotation`, `stun`, `tint`, `bossBar` |
-| Targeters | `@self`, `@target`, `@trigger`, `@PlayersInRadius`, `@EntitiesInRadius`, `@NearestPlayer`, `@RandomPlayer`, `@ThreatTable`, `@Cone`, `@Ring`, `@SelfLocation`, `@TargetLocation`, `@Bone`, `@Forward`, `@Origin`, `@Parent`, `@RandomLocationsNearCaster` |
-| Conditions | `healthPct`, `distance`, `chance`, `phase`, `hasTarget`, `hasTag`, `offGcd`, `moving`, `inBlock`, `lineOfSight`, `height`, `altitude`, `playersNearby`, `variable`, `varEquals`, `variableIsSet`, `fieldOfView`, `inCombat`, `directionalVelocity` (any can be negated with `!`, and end in `castInstead <skill>` / `orElseCast <skill>`) |
-| Triggers | `onSpawn`, `onTimer:N`, `onDamaged`, `onDeath`, `onAttack`, `onInteract`, `onPhase:N`, `onSignal:name`, `onReset`, `animEnd`, `onMarker:name` |
+| Mechanics | **Combat:** `damage`, `percentDamage`, `heal`, `potion`, `ignite`, `lightning`, `throw`, `knockback`, `pull`, `shieldBreak`, `invulnerable`, `hitbox`, `projectile` · **Movement:** `leap`, `lunge`, `propel`, `velocity`, `teleport`, `teleportBehind`, `setSpeed`, `setAI`, `lockFacing` · **Visual/audio:** `state`, `baseState`, `particle`, `particleRing`, `particleSphere`, `particleLine`, `sound`, `cameraShake`, `setProperty`, `message`, `title`, `actionBar` · **World:** `summon`, `remove`, `tempBlocks` · **Flow:** `delay`, `waitMarker`, `skill`, `randomSkill`, `aura`, `gcd`, `phase`, `setVariable`, `variableMath`, `signal`, `addTag`, `removeTag` · **Other:** `rayTraceTo`, `modifyProjectile`, `setRotation`, `matchRotation`, `stun`, `tint`, `bossBar`, `explosion`, `shoot`, `jump`, `threat`, `setHealth`, `swap`, `forcePull`, `command`, `suicide` |
+| Targeters | `@self`, `@target`, `@trigger`, `@PlayersInRadius`, `@EntitiesInRadius`, `@NearestPlayer`, `@RandomPlayer`, `@ThreatTable`, `@Cone`, `@Ring`, `@SelfLocation`, `@TargetLocation`, `@Bone`, `@Forward`, `@Origin`, `@Parent`, `@RandomLocationsNearCaster`, `@RandomLocationsNearTarget`, `@MobsInRadius`, `@PlayersInRing`, `@Line`, `@Location`, `@Spawn` |
+| Conditions | `healthPct`, `distance`, `chance`, `phase`, `hasTarget`, `hasTag`, `offGcd`, `moving`, `inBlock`, `lineOfSight`, `height`, `altitude`, `playersNearby`, `variable`, `varEquals`, `variableIsSet`, `fieldOfView`, `inCombat`, `directionalVelocity`, `onGround`, `isPlayer`, `onFire`, `crouching`, `sprinting`, `entityType`, `hasEffect` (any can be negated with `!`, and end in `castInstead <skill>` / `orElseCast <skill>`) |
+| Triggers | `onSpawn`, `onLoad`, `onTimer:N`, `onDamaged`, `onDeath`, `onAttack`, `onInteract`, `onCombat`, `onDropCombat`, `onChangeTarget`, `onKillPlayer`, `onPhase:N`, `onSignal:name`, `onReset`, `animEnd`, `onMarker:name` |
 
 ## The `/behemoth` menu
 
@@ -146,7 +146,8 @@ between packs, and the connector reports any it finds.
    `private/<Boss>/`.
 2. Write `private/<Boss>/<boss>.job.json`. The format is documented at the top of
    [`converter/bhmconv/cli.py`](converter/bhmconv/cli.py). It covers mappings (summoned mobs, sounds, bone aliases,
-   blades, particles) and Bedrock-side tuning.
+   blades, particles, projectile models) and Bedrock-side tuning. List the pack's other mobs (minions, effect mobs)
+   under `minions` to convert them into the same pack; the boss's summons of them are mapped automatically.
 3. Run `npm run convert -- --job private/<Boss>/<boss>.job.json`, then read `private/<Boss>/<boss>.report.md`. It
    lists everything skipped or approximated.
 4. The pack is written to `private/<Boss>/pack/{BP,RP}`. Run `npm run validate`, `npm run sim:scenarios`, then
