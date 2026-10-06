@@ -37,6 +37,12 @@ also comes with a Python converter that turns MythicMobs + ModelEngine bosses in
 - **Phases:** health thresholds, skills on entering a phase, and per-phase entity properties.
 - **Baked bone tracks:** hits and effects follow the actual model, for example a sword's hilt-to-tip hitbox.
 - **Threat, reset and leash:** threat-based targeting; a boss resets when players leave or it's dragged too far.
+- **Variables and placeholders:** caster/target/skill/global variables, `<caster.var.x>`, `<caster.hp>`,
+  `<random.float.0.9to1.2>` and more inside any option.
+- **Projectiles and effect entities:** projectiles can fly a model entity and run skills as they tick, hit and land;
+  summoned effects (telegraphs, slashes) know their boss.
+- **Multiplayer:** health scales with the number of players; loot goes into a chest where the boss died, and
+  explosions can't destroy it. Bosses are removed on Peaceful.
 - **Persistence:** fights survive chunk unloads, `/reload` and restarts.
 - **Validation:** configs are checked when they register, and offline with `npm run validate`.
 - **`/behemoth`:** a chest-style settings menu, described below.
@@ -45,9 +51,9 @@ also comes with a Python converter that turns MythicMobs + ModelEngine bosses in
 
 | Kind | Modules |
 | --- | --- |
-| Mechanics | **Combat:** `damage`, `percentDamage`, `heal`, `potion`, `ignite`, `lightning`, `throw`, `knockback`, `pull`, `shieldBreak`, `invulnerable`, `hitbox`, `projectile` · **Movement:** `leap`, `lunge`, `propel`, `velocity`, `teleport`, `teleportBehind`, `setSpeed`, `setAI`, `lockFacing` · **Visual/audio:** `state`, `baseState`, `particle`, `particleRing`, `particleSphere`, `particleLine`, `sound`, `cameraShake`, `setProperty`, `message`, `title`, `actionBar` · **World:** `summon`, `tempBlocks` · **Flow:** `delay`, `waitMarker`, `skill`, `randomSkill`, `aura`, `gcd`, `phase`, `setVariable`, `signal`, `addTag`, `removeTag` |
-| Targeters | `@self`, `@target`, `@trigger`, `@PlayersInRadius`, `@EntitiesInRadius`, `@NearestPlayer`, `@RandomPlayer`, `@ThreatTable`, `@Cone`, `@Ring`, `@SelfLocation`, `@TargetLocation`, `@Bone`, `@Forward` |
-| Conditions | `healthPct`, `distance`, `chance`, `phase`, `hasTarget`, `hasTag`, `offGcd`, `moving`, `inBlock`, `lineOfSight`, `height`, `playersNearby`, `variable` (any can be negated with `!`) |
+| Mechanics | **Combat:** `damage`, `percentDamage`, `heal`, `potion`, `ignite`, `lightning`, `throw`, `knockback`, `pull`, `shieldBreak`, `invulnerable`, `hitbox`, `projectile` · **Movement:** `leap`, `lunge`, `propel`, `velocity`, `teleport`, `teleportBehind`, `setSpeed`, `setAI`, `lockFacing` · **Visual/audio:** `state`, `baseState`, `particle`, `particleRing`, `particleSphere`, `particleLine`, `sound`, `cameraShake`, `setProperty`, `message`, `title`, `actionBar` · **World:** `summon`, `remove`, `tempBlocks` · **Flow:** `delay`, `waitMarker`, `skill`, `randomSkill`, `aura`, `gcd`, `phase`, `setVariable`, `variableMath`, `signal`, `addTag`, `removeTag` · **Other:** `rayTraceTo`, `modifyProjectile`, `setRotation`, `matchRotation`, `stun`, `tint`, `bossBar` |
+| Targeters | `@self`, `@target`, `@trigger`, `@PlayersInRadius`, `@EntitiesInRadius`, `@NearestPlayer`, `@RandomPlayer`, `@ThreatTable`, `@Cone`, `@Ring`, `@SelfLocation`, `@TargetLocation`, `@Bone`, `@Forward`, `@Origin`, `@Parent`, `@RandomLocationsNearCaster` |
+| Conditions | `healthPct`, `distance`, `chance`, `phase`, `hasTarget`, `hasTag`, `offGcd`, `moving`, `inBlock`, `lineOfSight`, `height`, `altitude`, `playersNearby`, `variable`, `varEquals`, `variableIsSet`, `fieldOfView`, `inCombat`, `directionalVelocity` (any can be negated with `!`, and end in `castInstead <skill>` / `orElseCast <skill>`) |
 | Triggers | `onSpawn`, `onTimer:N`, `onDamaged`, `onDeath`, `onAttack`, `onInteract`, `onPhase:N`, `onSignal:name`, `onReset`, `animEnd`, `onMarker:name` |
 
 ## The `/behemoth` menu

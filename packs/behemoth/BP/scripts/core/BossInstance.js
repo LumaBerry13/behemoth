@@ -45,8 +45,18 @@ export class BossInstance {
     this.lockUntil = 0;
     /** @type {Set<import("./SkillExecutor.js").SkillRun>} */
     this.runs = new Set();
-    /** @type {Record<string, unknown>} */
-    this.vars = {};
+    /** @type {Record<string, unknown>} caster-scope variables (initial values: config.variables) */
+    this.vars = { ...(this.config.variables ?? {}) };
+    /** @type {Map<object, number>} compiled skill line → framework tick when it may run again (line `cooldown`) */
+    this.lineCooldowns = new Map();
+    /** Effective health multiplier from stats.healthScaling (incoming damage is divided by it). */
+    this.healthScale = 1;
+    /** Players counted for the current health scale. */
+    this.scaledFor = 1;
+    /** Framework tick when a `stun` ends (0 = not stunned). */
+    this.stunUntil = 0;
+    /** @type {{ ai: AiMode, speed: number, facing: boolean } | undefined} state restored when the stun ends */
+    this.stunPrev = undefined;
     this.threat = new ThreatTable();
     /** @type {Set<string>} ids of summoned entities */
     this.summons = new Set();
@@ -144,9 +154,11 @@ export class BossInstance {
     this.age++;
     this.lastLocation = Adapter.location(this.entity.location);
     this.dimensionId = this.entity.dimension.id;
+    if (this.stunUntil && this.services.scheduler.tick >= this.stunUntil) this.endStun();
     this.faceTarget();
     this.updateHold();
     if (this.age % 20 === 0) this.checkReset();
+    if (this.age % 100 === 0) this.updateHealthScale(false);
     this.services.bus.emit("tick", { boss: this, data: { age: this.age } });
   }
 
@@ -210,6 +222,49 @@ export class BossInstance {
     this.invulnerable = on;
   }
 
+  /**
+   * stats.healthScaling (D7): effective health = health × (1 + perPlayer × (players − 1)),
+   * counting targetable players within `radius` (default targetRange), capped at `max`.
+   * Implemented by dividing incoming damage, so the boss bar shows the true fraction.
+   * Recomputed from scratch on spawn and reset; during a fight it only goes up.
+   * @param {boolean} fresh
+   */
+  updateHealthScale(fresh) {
+    const hs = this.config.stats?.healthScaling;
+    if (!hs || this.dead) return;
+    const n = Math.max(1, Adapter.getTargetablePlayers(this.dimension, this.location, hs.radius ?? this.targetRange).length);
+    const m = Math.max(1, Math.min(hs.max ?? 10, 1 + hs.perPlayer * (n - 1)));
+    if (!fresh && m <= this.healthScale) return;
+    if (m !== this.healthScale) Log.debug(`${this.config.id}: health scale ×${m.toFixed(2)} (${n} player(s))`);
+    this.healthScale = m;
+    this.scaledFor = n;
+  }
+
+  /**
+   * Stun (MythicMobs `stun`): frozen AI, no movement, no turning, for `ticks`.
+   * Re-stunning extends it; the previous state comes back when it ends.
+   * @param {number} ticks
+   */
+  stun(ticks) {
+    if (!this.stunUntil) {
+      this.stunPrev = { ai: this.aiMode, speed: this.speedMult, facing: this.facingLocked };
+      this.setAiMode("frozen");
+      this.setSpeed(0);
+      this.facingLocked = true;
+    }
+    this.stunUntil = Math.max(this.stunUntil, this.services.scheduler.tick + ticks);
+  }
+
+  endStun() {
+    const prev = this.stunPrev;
+    this.stunUntil = 0;
+    this.stunPrev = undefined;
+    if (!prev) return;
+    this.setAiMode(prev.ai);
+    this.setSpeed(prev.speed);
+    this.facingLocked = prev.facing;
+  }
+
   // -------------------------------------------------------------------------
   // Reset / leash (design doc §10)
   // -------------------------------------------------------------------------
@@ -252,7 +307,11 @@ export class BossInstance {
     for (const [k, v] of Object.entries(first?.properties ?? {})) Adapter.setProperty(this.entity, k, v);
     this.threat.clear();
     this.cooldowns.clear();
+    this.lineCooldowns.clear();
     this.hitCooldowns.clear();
+    this.stunUntil = 0;
+    this.stunPrev = undefined;
+    this.updateHealthScale(true);
     this.gcdUntil = 0;
     this.invulnerable = false;
     this.facingLocked = false;

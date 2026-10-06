@@ -20,6 +20,7 @@ const VERSION = 1;
  *   facing?: boolean,
  *   speed?: number,
  *   bound?: string[],
+ *   hs?: number,
  * }} SavedState
  */
 
@@ -42,6 +43,7 @@ export const Persistence = {
       facing: boss.facingLocked,
       speed: boss.speedMult,
       bound: [...boss.boundSummons],
+      hs: boss.healthScale,
     };
     try {
       Adapter.setDynamic(boss.entity, KEY, JSON.stringify(state));
@@ -80,6 +82,7 @@ export const Persistence = {
     boss.facingLocked = !!state.facing;
     boss.speedMult = state.speed ?? 1;
     boss.boundSummons = new Set(state.bound ?? []);
+    boss.healthScale = state.hs ?? 1;
   },
 
   /** Mark an entity whose death is still playing out, so it is never re-armed on reload. @param {import("@minecraft/server").Entity} entity */

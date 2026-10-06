@@ -27,7 +27,7 @@ export default {
       ctx.boss,
       name,
       { triggerEntity: ctx.trigger, data: ctx.data },
-      { inherited: targets }
+      { inherited: targets, skillVars: ctx.skillVars, origin: ctx.origin, projectile: ctx.projectile }
     );
   },
 };

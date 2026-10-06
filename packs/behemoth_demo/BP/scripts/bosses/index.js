@@ -2,5 +2,6 @@
 // (npm run validate / sim) can load the configs without the game.
 import testBoss from "./test_boss.js";
 import minion from "./minion.js";
+import marker from "./marker.js";
 
-export default [testBoss, minion];
+export default [testBoss, minion, marker];

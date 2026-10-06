@@ -3,10 +3,13 @@
 // A run walks its steps iteratively; a mechanic returning N > 0 pauses the run
 // for N ticks via the scheduler, under the run's cancel token. A line with
 // `delay: N` runs N ticks later without pausing the sequence (MythicMobs
-// per-mechanic delay). Lines without an explicit targeter use the targets
-// inherited from a parent skill, else the mechanic's default targeter.
+// per-mechanic delay); `repeat: N` runs it N more times, `repeatInterval`
+// ticks apart, also without pausing. Lines without an explicit targeter use
+// the targets inherited from a parent skill, else the mechanic's default
+// targeter. Option strings with <placeholders> are resolved per execution.
 import { Log } from "./Logger.js";
 import { Random } from "./Random.js";
+import { parseTargeter, coerce } from "./SkillParser.js";
 
 /** @typedef {import("./Validator.js").CompiledSkill} CompiledSkill */
 /** @typedef {import("./Validator.js").CompiledStep} CompiledStep */
@@ -21,12 +24,17 @@ import { Random } from "./Random.js";
  * @typedef {object} CastOptions
  * @property {boolean} [force] skip cooldown / lock / chance / conditions
  * @property {Target[]} [inherited] targets passed from a parent skill
+ * @property {Record<string, unknown>} [skillVars] skill-scope variables shared with the caller
+ * @property {import("../types/config").Location} [origin] origin point for the Origin targeter (projectiles, ray traces)
+ * @property {import("../types/config").ProjectileHandle} [projectile] the projectile running this skill (modifyProjectile)
  */
 
 export class SkillExecutor {
   /** @param {import("./services.js").Services} services */
   constructor(services) {
     this.services = services;
+    /** @type {Map<string, { module: import("../types/config").Targeter, options: Record<string, any> } | null>} */
+    this.targeterCache = new Map();
   }
 
   /** Connect every registered trigger to the bus. */
@@ -58,7 +66,7 @@ export class SkillExecutor {
   }
 
   /**
-   * Cast by name (phase onEnter, `skill`/`randomSkill`/`aura`/`hitbox`, debug command).
+   * Cast by name (phase onEnter, `skill`/`randomSkill`/`aura`/`hitbox`, menu).
    * @param {BossInstance} boss @param {string} name @param {Partial<TriggerEvent>} [event]
    * @param {CastOptions | boolean} [opts] `true` is shorthand for { force: true }
    */
@@ -72,6 +80,27 @@ export class SkillExecutor {
   }
 
   /**
+   * @param {BossInstance} boss @param {Partial<TriggerEvent>} event @param {CastOptions} opts
+   * @returns {SkillContext}
+   */
+  makeContext(boss, event, opts) {
+    return {
+      boss,
+      caster: boss.entity,
+      trigger: event.triggerEntity,
+      targets: [],
+      data: event.data,
+      vars: boss.vars,
+      skillVars: opts.skillVars ?? {},
+      origin: opts.origin,
+      projectile: opts.projectile,
+      token: boss.token, // replaced by the run token in cast()
+      services: this.services,
+      inherited: opts.inherited,
+    };
+  }
+
+  /**
    * @param {BossInstance} boss @param {CompiledSkill} skill
    * @param {Partial<TriggerEvent>} event @param {CastOptions} [opts]
    * @returns {boolean} true if the skill started
@@ -79,23 +108,18 @@ export class SkillExecutor {
   cast(boss, skill, event, opts = {}) {
     if (boss.destroyed) return false;
     const now = this.services.scheduler.tick;
-    /** @type {SkillContext} */
-    const ctx = {
-      boss,
-      caster: boss.entity,
-      trigger: event.triggerEntity,
-      targets: [],
-      data: event.data,
-      vars: boss.vars,
-      token: boss.token, // replaced by the run token below
-      services: this.services,
-      inherited: opts.inherited,
-    };
+    const ctx = this.makeContext(boss, event, opts);
 
     if (!opts.force) {
       if (!this.isReady(boss, skill, now)) return false;
       if (skill.chance < 1 && !Random.chance(skill.chance)) return false;
-      if (!this.checkConditions(ctx, skill.conditions)) return false;
+      const gate = this.gate(ctx, skill);
+      if (gate.redirect) {
+        this.castByName(boss, gate.redirect, event, { inherited: opts.inherited, skillVars: ctx.skillVars, origin: opts.origin, projectile: opts.projectile });
+        return false;
+      }
+      if (!gate.ok) return false;
+      if (gate.targets) ctx.inherited = gate.targets;
     }
 
     /** @type {SkillRun} */
@@ -110,6 +134,31 @@ export class SkillExecutor {
     Log.debug(`${boss.config.id} casts "${skill.name}"`);
     this.runSteps(ctx, run, [{ steps: skill.steps, i: 0 }]);
     return true;
+  }
+
+  /**
+   * Skill conditions (against the caster) and target conditions (MythicMobs
+   * TargetConditions: against the inherited targets, else the current target;
+   * targets that fail are dropped, none left = the skill does not run).
+   * @param {SkillContext} ctx @param {CompiledSkill} skill
+   * @returns {{ ok: boolean, redirect?: string, targets?: Target[] }}
+   */
+  gate(ctx, skill) {
+    const self = this.evalConditions(ctx, skill.conditions);
+    if (!self.ok || self.redirect) return self;
+    if (!skill.targetConditions.length) return { ok: true };
+    const candidates = ctx.inherited?.length ? ctx.inherited : [ctx.boss.getTarget()].filter((t) => t !== undefined);
+    /** @type {Target[]} */
+    const pass = [];
+    /** @type {string | undefined} */
+    let redirect;
+    for (const t of candidates) {
+      const r = this.evalConditions(ctx, skill.targetConditions, t);
+      if (r.redirect) redirect ??= r.redirect;
+      else if (r.ok) pass.push(t);
+    }
+    if (pass.length) return { ok: true, targets: pass };
+    return redirect ? { ok: false, redirect } : { ok: false };
   }
 
   /**
@@ -130,12 +179,8 @@ export class SkillExecutor {
   canCast(boss, name, event = {}, inherited) {
     const skill = boss.compiled.skills.get(name);
     if (!skill || boss.destroyed || !this.isReady(boss, skill, this.services.scheduler.tick)) return false;
-    /** @type {SkillContext} */
-    const ctx = {
-      boss, caster: boss.entity, trigger: event.triggerEntity, targets: [], data: event.data,
-      vars: boss.vars, token: boss.token, services: this.services, inherited,
-    };
-    return this.checkConditions(ctx, skill.conditions);
+    const gate = this.gate(this.makeContext(boss, event, { inherited }), skill);
+    return gate.ok && !gate.redirect;
   }
 
   /**
@@ -143,6 +188,7 @@ export class SkillExecutor {
    */
   runSteps(ctx, run, stack) {
     const boss = ctx.boss;
+    const scheduler = this.services.scheduler;
     while (stack.length) {
       if (run.token.cancelled || boss.destroyed) return this.finish(boss, run);
       const frame = stack[stack.length - 1];
@@ -152,16 +198,29 @@ export class SkillExecutor {
       }
       const step = frame.steps[frame.i++];
       if (step.chance < 1 && !Random.chance(step.chance)) continue;
-      if (!this.checkConditions(ctx, step.conditions)) continue;
+      const gate = this.evalConditions(ctx, step.conditions);
+      if (gate.redirect) {
+        this.castByName(boss, gate.redirect, { triggerEntity: ctx.trigger, data: ctx.data },
+          { inherited: ctx.inherited, skillVars: ctx.skillVars, origin: ctx.origin, projectile: ctx.projectile });
+        continue;
+      }
+      if (!gate.ok) continue;
       if (step.children) {
         stack.push({ steps: step.children, i: 0 });
         continue;
       }
       if (!step.mechanic) continue;
 
+      // Repeats never pause the sequence.
+      for (let k = 1; k <= step.repeat; k++) {
+        scheduler.after(step.delay + k * Math.max(1, step.repeatInterval), () => {
+          if (!boss.destroyed) this.execStep(ctx, run, step);
+        }, run.token);
+      }
+
       if (step.delay > 0) {
         // Non-blocking: the sequence carries on; this line fires later.
-        this.services.scheduler.after(step.delay, () => {
+        scheduler.after(step.delay, () => {
           if (!boss.destroyed) this.execStep(ctx, run, step);
         }, run.token);
         continue;
@@ -169,7 +228,7 @@ export class SkillExecutor {
 
       const delay = this.execStep(ctx, run, step);
       if (delay > 0) {
-        this.services.scheduler.after(delay, () => this.runSteps(ctx, run, stack), run.token);
+        scheduler.after(delay, () => this.runSteps(ctx, run, stack), run.token);
         return;
       }
     }
@@ -182,6 +241,12 @@ export class SkillExecutor {
    * @returns {number} ticks to pause the sequence (0 = continue)
    */
   execStep(ctx, run, step) {
+    const boss = ctx.boss;
+    if (step.cooldown) {
+      const now = this.services.scheduler.tick;
+      if ((boss.lineCooldowns.get(step) ?? 0) > now) return 0;
+      boss.lineCooldowns.set(step, now + step.cooldown);
+    }
     /** @type {Target[]} */
     let targets = [];
     try {
@@ -195,7 +260,8 @@ export class SkillExecutor {
     if (step.explicitTargeter && targets.length === 0) return 0;
     ctx.targets = targets;
     try {
-      const delay = step.mechanic.execute(ctx, targets, step.options);
+      const options = step.dynamic ? this.resolveOptions(ctx, step, targets[0]) : step.options;
+      const delay = step.mechanic.execute(ctx, targets, options);
       return typeof delay === "number" && delay > 0 ? delay : 0;
     } catch (e) {
       Log.error(`mechanic "${step.name}" failed in "${run.skill.name}":`, e);
@@ -204,10 +270,45 @@ export class SkillExecutor {
   }
 
   /**
+   * Options with their <placeholders> resolved for this execution.
+   * @param {SkillContext} ctx @param {CompiledStep} step @param {Target | undefined} target
+   */
+  resolveOptions(ctx, step, target) {
+    const out = { ...step.options };
+    for (const k of step.dynamic ?? []) out[k] = coerce(this.services.vars.format(ctx, String(step.options[k]), target));
+    return out;
+  }
+
+  /**
+   * Resolve a targeter given as a mechanic option (e.g. projectile `origin`).
+   * Parsed once per distinct spec.
+   * @param {SkillContext} ctx @param {import("../types/config").TargeterSpec} spec
+   * @returns {Target[]}
+   */
+  resolveTargeter(ctx, spec) {
+    const key = typeof spec === "string" ? spec : JSON.stringify(spec);
+    let t = this.targeterCache.get(key);
+    if (t === undefined) {
+      const parsed = parseTargeter(spec);
+      const module = "error" in parsed ? undefined : this.services.registry.targeter(parsed.name);
+      t = module && !("error" in parsed) ? { module, options: parsed.options } : null;
+      this.targeterCache.set(key, t);
+    }
+    if (!t) return [];
+    try {
+      return t.module.resolve(ctx, t.options);
+    } catch (e) {
+      Log.error(`targeter ${key} failed:`, e);
+      return [];
+    }
+  }
+
+  /**
    * @param {SkillContext} ctx @param {CompiledCondition[]} conditions
    * @param {Target} [target] defaults to the caster
+   * @returns {{ ok: boolean, redirect?: string }} redirect = skill to cast instead (castInstead / orElseCast)
    */
-  checkConditions(ctx, conditions, target = ctx.caster) {
+  evalConditions(ctx, conditions, target = ctx.caster) {
     for (const c of conditions) {
       let ok;
       try {
@@ -220,9 +321,22 @@ export class SkillExecutor {
         Log.error(`condition failed:`, e);
         ok = false;
       }
-      if (!ok) return false;
+      if (c.action?.kind === "castInstead") {
+        if (ok) return { ok: false, redirect: c.action.skill };
+        continue;
+      }
+      if (!ok) return c.action?.kind === "orElseCast" ? { ok: false, redirect: c.action.skill } : { ok: false };
     }
-    return true;
+    return { ok: true };
+  }
+
+  /**
+   * @param {SkillContext} ctx @param {CompiledCondition[]} conditions
+   * @param {Target} [target] defaults to the caster
+   */
+  checkConditions(ctx, conditions, target = ctx.caster) {
+    const r = this.evalConditions(ctx, conditions, target);
+    return r.ok && !r.redirect;
   }
 
   /** @param {BossInstance} boss @param {SkillRun} run */

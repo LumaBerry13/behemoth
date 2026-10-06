@@ -7,7 +7,9 @@ export default {
   schemaVersion: 1,
   id: "bhm_demo:test_boss",
   display: { name: "§cTest Boss", bossBar: true },
-  stats: { health: 300, knockbackResist: 1, scale: 1.5, movementSpeed: 0.25 },
+  stats: { health: 300, knockbackResist: 1, scale: 1.5, movementSpeed: 0.25, healthScaling: { perPlayer: 0.5, max: 4 } },
+  // Caster variables and their starting values (MythicMobs mob Variables).
+  variables: { combo: 0, mode: "angry" },
   animations: anims,
   ai: { default: "chase", targetRange: 32, leashRange: 48, resetAfterNoPlayers: 600 },
   threat: { enabled: true },
@@ -136,6 +138,86 @@ export default {
       ],
     },
     on_ping: { tr: "onSignal:ping", m: "actionBar", o: { text: "§bsignal received" }, t: "@PlayersInRadius{r=32}" },
+    // Variables, scopes and <placeholders>.
+    demo_vars: {
+      c: [
+        { m: "setVariable", o: { name: "combo", add: 1, type: "int" } },
+        { m: "variableMath", o: { var: "caster.power", eq: "max(0, x * 2 + <caster.var.combo>)" } },
+        { m: "setVariable", o: { name: "skill.roll", value: "<random.int.1to6>", type: "int" } },
+        { m: "setVariable", o: { name: "caster.temp", value: "on", type: "string", duration: 20 } },
+        { m: "setVariable", o: { name: "global.demo_runs", add: 1 } },
+        {
+          m: "message",
+          o: { text: "§7combo §f<caster.var.combo>§7, power §f<caster.var.power>§7, roll §f<skill.var.roll>§7, hp §f<caster.hp>/<caster.mhp>" },
+          t: "@PlayersInRadius{r=32}",
+        },
+      ],
+    },
+    // castInstead / orElseCast and target conditions (MythicMobs TargetConditions).
+    demo_instead: {
+      if: ["varEquals{var=caster.mode;val=calm} castInstead demo_calm"],
+      m: "actionBar", o: { text: "§cThe Test Boss is angry" }, t: "@PlayersInRadius{r=32}",
+    },
+    demo_calm: { m: "actionBar", o: { text: "§aThe Test Boss is calm" }, t: "@PlayersInRadius{r=32}" },
+    demo_fov: {
+      targetIf: ["fieldOfView{angle=90;rotation=0} orElseCast demo_turn_around"],
+      m: "actionBar", o: { text: "§aYou are in front of the Test Boss" },
+    },
+    demo_turn_around: { m: "setRotation", o: { yaw: 180, relative: true }, t: "@self" },
+    // repeat / repeatInterval and a per-line cooldown.
+    demo_combo: {
+      c: [
+        { m: "particle", o: { particle: "minecraft:critical_hit_emitter", yOffset: 1 }, repeat: 4, repeatInterval: 5 },
+        { m: "sound", o: { sound: "random.orb", pitch: "<random.float.0.9to1.2>" }, cooldown: 40 },
+      ],
+    },
+    // Condition showcase: each line runs only if its condition holds.
+    demo_checks: {
+      c: [
+        { m: "actionBar", o: { text: "§7in combat" }, t: "@PlayersInRadius{r=32}", if: ["inCombat"] },
+        { m: "actionBar", o: { text: "§7temp is set" }, t: "@PlayersInRadius{r=32}", if: ["variableIsSet{var=caster.temp}"] },
+        { m: "actionBar", o: { text: "§7on the ground" }, t: "@PlayersInRadius{r=32}", if: ["altitude<1", "directionalVelocity{y=>-0.1}"] },
+      ],
+    },
+    // A beam: damages players along it, sparks where it ends.
+    demo_ray: {
+      m: "rayTraceTo",
+      o: { maxDistance: 24, width: 1, particle: "minecraft:blue_flame_particle", entitySkill: "demo_ray_hit", locationSkill: "demo_ray_end" },
+      t: "@target",
+    },
+    demo_ray_hit: { c: [{ m: "damage", o: { amount: 2 } }, { m: "throw", o: { velocity: 6, velocityY: 3 } }] },
+    demo_ray_end: { m: "particle", o: { particle: "minecraft:large_explosion" }, t: "@Origin" },
+    // An entity projectile (an arrow model) that speeds up, sparks and leaves a marker where it lands.
+    demo_bullet: {
+      m: "projectile",
+      o: {
+        bullet: "bhm_demo:bullet", speed: 0.5, gravity: 0.01, range: 32, tickInterval: 2,
+        onTick: "demo_bullet_tick", onHit: "demo_projectile_hit", onEnd: "demo_bullet_end",
+      },
+      t: "@target",
+    },
+    demo_bullet_tick: {
+      c: [
+        { m: "modifyProjectile", o: { trait: "velocity", action: "multiply", value: 1.05 } },
+        { m: "particle", o: { particle: "minecraft:basic_crit_particle" }, t: "@Origin" },
+      ],
+    },
+    demo_bullet_end: { m: "summon", o: { type: "bhm_demo:marker", radius: 0, lifetime: 60, facing: "caster" } },
+    // Effects raining down at random spots around the boss.
+    demo_rain: { m: "skill", o: { skill: "demo_rain_drop" }, t: "@RandomLocationsNearCaster{amount=4;radius=8;minRadius=3;spacing=2}" },
+    demo_rain_drop: {
+      c: [
+        { m: "summon", o: { type: "bhm_demo:marker", radius: 0, cap: 12, facing: "caster" } },
+        { m: "particle", o: { particle: "minecraft:huge_explosion_emitter" }, delay: 20 },
+      ],
+    },
+    demo_stun: { c: [{ m: "stun", o: { duration: 40 }, t: "@self" }, { m: "message", o: { text: "§7The Test Boss is stunned." }, t: "@PlayersInRadius{r=32}" }] },
+    demo_bar: {
+      c: [
+        { m: "bossBar", o: { title: "<caster.name> §7(<caster.php>%)" } },
+        { m: "bossBar", o: { reset: true }, delay: 60 },
+      ],
+    },
     on_interact: { tr: "onInteract", if: ["lineOfSight", "height>=-64", "playersNearby{r=16;min=1}"], m: "message", o: { text: "§7The Test Boss ignores you." }, t: "@trigger" },
   },
   drops: [{ item: "minecraft:diamond", amount: [2, 5], chance: 1 }],

@@ -1,13 +1,25 @@
-// Scripted particle projectile (MythicMobs `projectile` / `missile` style): a
-// point flies from the caster toward each target's position at cast time,
-// drawing `particle`, and casts `onHit` (forced, inherited = the hit entity) on
-// the first living entity within `radius`. Stops on a solid block or after
-// `range` blocks. No custom entity needed. Runs on the skill's cancel token.
-// o: { particle, onHit, speed?=0.8 (blocks/tick), range?=24, radius?=0.8,
-//      gravity?=0, startY?=1.5, hitPlayers?=true, hitNonPlayers?=false, onEnd? }
-import { normalize } from "../../core/vec.js";
+// Scripted projectile (MythicMobs `projectile`): a point flies from the caster
+// (or `origin`) toward each target (or `toward`), drawn by `particle` and/or a
+// `bullet` entity that the framework moves every tick (e.g. a thrown sword
+// model from the boss pack: give it no AI, no gravity, no collision). It runs
+// skills at its position, which they see as @Origin and as their inherited
+// target:
+//   onStart  when it is launched
+//   onTick   every `tickInterval` ticks while flying (modifyProjectile works here)
+//   onHit    on each entity it hits (inherited target = that entity)
+//   onEnd    where it stops (hit, block, range or time limit)
+// Bullets are bound to the boss (removed if it dies) and removed when the
+// projectile ends. Projectiles keep flying when the casting skill ends; the
+// boss dying or resetting stops them.
+// o: { particle?, bullet?, speed?=0.8 (blocks/tick), gravity?=0, inertia?=1,
+//      range?=24, maxTicks?=200, radius?=0.8, verticalRadius?=radius,
+//      startY?=1.5, startForward?=0, startSide?=0, targetY?, origin?, toward?,
+//      hugSurface?=false, stopAtEntity?=true, stopAtBlock?=true,
+//      hitPlayers?=true, hitNonPlayers?=false, tickInterval?=1,
+//      onStart?, onTick?, onHit?, onEnd? }
+import { normalize, rotateYaw } from "../../core/vec.js";
 
-const MAX_TICKS = 200;
+const SKILL_KEYS = ["onStart", "onTick", "onHit", "onEnd"];
 
 /** @type {import("../../types/config").Mechanic} */
 export default {
@@ -15,60 +27,145 @@ export default {
   defaultTargeter: "@target",
   validate(o, vctx) {
     const errors = [];
-    if (typeof o.particle !== "string") errors.push("`particle` is required");
-    if (typeof o.onHit !== "string" || !vctx.config.skills[o.onHit]) errors.push(`\`onHit\` skill "${o.onHit}" is not defined`);
-    if (o.onEnd !== undefined && !vctx.config.skills[o.onEnd]) errors.push(`\`onEnd\` skill "${o.onEnd}" is not defined`);
-    if (o.speed !== undefined && (typeof o.speed !== "number" || o.speed <= 0)) errors.push("`speed` must be > 0");
+    for (const k of SKILL_KEYS) {
+      if (o[k] !== undefined && (typeof o[k] !== "string" || !vctx.config.skills[o[k]])) errors.push(`\`${k}\` skill "${o[k]}" is not defined`);
+    }
+    if (o.particle === undefined && o.bullet === undefined && o.onTick === undefined) errors.push("needs `particle`, `bullet` or `onTick`");
+    if (o.bullet !== undefined && (typeof o.bullet !== "string" || !o.bullet.includes(":"))) errors.push("`bullet` must be a namespaced entity id");
+    for (const k of ["speed", "range", "maxTicks", "radius", "verticalRadius", "tickInterval"]) {
+      if (o[k] !== undefined && (typeof o[k] !== "number" || o[k] <= 0)) errors.push(`\`${k}\` must be > 0`);
+    }
+    for (const k of ["gravity", "inertia", "startY", "startForward", "startSide", "targetY"]) {
+      if (o[k] !== undefined && typeof o[k] !== "number") errors.push(`\`${k}\` must be a number`);
+    }
+    for (const k of ["origin", "toward"]) {
+      if (o[k] !== undefined) for (const e of vctx.checkTargeter(o[k])) errors.push(`\`${k}\`: ${e}`);
+    }
     return errors;
   },
   execute(ctx, targets, o) {
-    const a = ctx.services.adapter;
-    const { scheduler, executor, bosses } = ctx.services;
-    const boss = ctx.boss;
-    const dim = boss.dimension;
-    const speed = o.speed ?? 0.8;
-    const range = o.range ?? 24;
-    const radius = o.radius ?? 0.8;
-    const gravity = o.gravity ?? 0;
-    const start = boss.location;
-
-    for (const t of targets) {
-      const goal = a.isEntity(t) ? a.getHeadLocation(t) : a.locOf(t);
-      const pos = { x: start.x, y: start.y + (o.startY ?? 1.5), z: start.z };
-      const dir = normalize({ x: goal.x - pos.x, y: goal.y - pos.y, z: goal.z - pos.z });
-      const vel = { x: dir.x * speed, y: dir.y * speed, z: dir.z * speed };
-      let travelled = 0;
-      let ticks = 0;
-
-      const end = () => {
-        if (o.onEnd) executor.castByName(boss, o.onEnd, { data: ctx.data }, { force: true, inherited: [a.location(pos)] });
-      };
-      const step = () => {
-        if (boss.destroyed) return;
-        pos.x += vel.x;
-        pos.y += vel.y;
-        pos.z += vel.z;
-        vel.y -= gravity;
-        travelled += speed;
-        a.spawnParticles(dim, o.particle, [pos]);
-
-        for (const e of a.getEntities(dim, { location: pos, maxDistance: radius + 1.5, excludeTags: ["bhm_summon"] })) {
-          if (e.id === boss.id || !a.hasHealth(e) || bosses.get(e.id)) continue;
-          const isPlayer = a.isPlayer(e);
-          if (isPlayer ? o.hitPlayers === false || !a.isTargetablePlayer(e) : !o.hitNonPlayers) continue;
-          const head = a.getHeadLocation(e);
-          const cy = Math.max(e.location.y, Math.min(pos.y, head.y));
-          if (Math.hypot(e.location.x - pos.x, cy - pos.y, e.location.z - pos.z) > radius + 0.3) continue;
-          executor.castByName(boss, o.onHit, { triggerEntity: e, data: ctx.data }, { force: true, inherited: [e] });
-          return; // first hit stops the projectile
-        }
-        const block = a.getBlockTypeId(dim, pos);
-        const solid = block !== "" && block !== "minecraft:air" && !block.includes("water") && !block.includes("lava")
-          && !block.includes("grass") && !block.includes("flower");
-        if (solid || travelled >= range || ++ticks >= MAX_TICKS) return end();
-        scheduler.after(1, step, ctx.token);
-      };
-      step();
-    }
+    const origin = o.origin ? ctx.services.executor.resolveTargeter(ctx, o.origin)[0] : undefined;
+    const toward = o.toward ? ctx.services.executor.resolveTargeter(ctx, o.toward)[0] : undefined;
+    for (const t of targets) launch(ctx, toward ?? t, o, origin);
   },
 };
+
+/**
+ * @param {import("../../types/config").SkillContext} ctx
+ * @param {import("../../types/config").Target} target
+ * @param {Record<string, any>} o
+ * @param {import("../../types/config").Target | undefined} originTarget
+ */
+function launch(ctx, target, o, originTarget) {
+  const a = ctx.services.adapter;
+  const { scheduler, executor, bosses } = ctx.services;
+  const boss = ctx.boss;
+  const token = boss.token; // outlives the casting skill; cancelled on death / reset
+  const dim = boss.dimension;
+  const yaw = a.getYaw(boss.entity);
+
+  /** @type {{ x: number, y: number, z: number }} */
+  let start;
+  if (originTarget) start = { ...a.locOf(originTarget) };
+  else {
+    const l = boss.location;
+    const off = rotateYaw({ x: o.startSide ?? 0, y: 0, z: o.startForward ?? 0 }, yaw);
+    start = { x: l.x + off.x, y: l.y + (o.startY ?? 1.5), z: l.z + off.z };
+  }
+  const goalBase = a.isEntity(target) && o.targetY === undefined ? a.getHeadLocation(target) : a.locOf(target);
+  const goal = { x: goalBase.x, y: goalBase.y + (o.targetY ?? 0), z: goalBase.z };
+  let dir = normalize({ x: goal.x - start.x, y: o.hugSurface ? 0 : goal.y - start.y, z: goal.z - start.z });
+  if (!Number.isFinite(dir.x) || (dir.x === 0 && dir.y === 0 && dir.z === 0)) dir = rotateYaw({ x: 0, y: 0, z: 1 }, yaw);
+
+  const speed = o.speed ?? 0.8;
+  /** @type {import("../../types/config").ProjectileHandle} */
+  const p = {
+    pos: start,
+    vel: { x: dir.x * speed, y: dir.y * speed, z: dir.z * speed },
+    speed,
+    gravity: o.gravity ?? 0,
+    inertia: o.inertia ?? 1,
+    radius: o.radius ?? 0.8,
+    verticalRadius: o.verticalRadius ?? o.radius ?? 0.8,
+    range: o.range ?? 24,
+    travelled: 0,
+    ticks: 0,
+    ended: false,
+    setSpeed(v) {
+      const cur = Math.hypot(this.vel.x, this.vel.y, this.vel.z) || 1;
+      const k = v / cur;
+      this.vel = { x: this.vel.x * k, y: this.vel.y * k, z: this.vel.z * k };
+      this.speed = v;
+    },
+  };
+  const maxTicks = o.maxTicks ?? 200;
+  const tickInterval = o.tickInterval ?? 1;
+  const hit = new Set();
+
+  const bullet = o.bullet ? a.spawnEntity(dim, o.bullet, start) : undefined;
+  if (bullet) {
+    a.addTag(bullet, "bhm_summon");
+    a.addTag(bullet, "bhm_projectile");
+    boss.boundSummons.add(bullet.id);
+    bosses.trackTemporary(bullet, maxTicks + 40);
+  }
+
+  /** @param {string} skill @param {import("../../types/config").Target[]} inherited @param {import("@minecraft/server").Entity} [trigger] */
+  const castAt = (skill, inherited, trigger) =>
+    executor.castByName(boss, skill, { triggerEntity: trigger, data: ctx.data },
+      { force: true, inherited, origin: a.location(p.pos), projectile: p, skillVars: ctx.skillVars });
+
+  const cleanup = () => {
+    if (!bullet) return;
+    boss.boundSummons.delete(bullet.id);
+    a.remove(bullet);
+  };
+  const end = () => {
+    if (p.ended) return;
+    p.ended = true;
+    cleanup();
+    if (o.onEnd && !boss.destroyed) castAt(o.onEnd, [a.location(p.pos)]);
+  };
+
+  if (o.onStart) castAt(o.onStart, [a.location(p.pos)]);
+
+  const step = () => {
+    if (p.ended) return;
+    if (boss.destroyed || token.cancelled) {
+      p.ended = true;
+      cleanup();
+      return;
+    }
+    const pos = p.pos;
+    pos.x += p.vel.x;
+    pos.y += p.vel.y;
+    pos.z += p.vel.z;
+    p.vel.y -= p.gravity;
+    if (p.inertia !== 1) p.vel = { x: p.vel.x * p.inertia, y: p.vel.y * p.inertia, z: p.vel.z * p.inertia };
+    if (o.hugSurface) pos.y = a.surfaceY(dim, pos) + 0.1;
+    p.travelled += Math.hypot(p.vel.x, p.vel.y, p.vel.z);
+    p.ticks++;
+
+    if (o.particle) a.spawnParticles(dim, o.particle, [pos]);
+    if (bullet?.isValid) a.teleport(bullet, pos, { x: pos.x + p.vel.x, y: pos.y + p.vel.y, z: pos.z + p.vel.z });
+    if (o.onTick && p.ticks % tickInterval === 0) castAt(o.onTick, [a.location(pos)]);
+    if (p.ended) return; // an onTick skill may end it
+
+    const vr = p.verticalRadius;
+    for (const e of a.getEntities(dim, { location: pos, maxDistance: p.radius + 3, excludeTags: ["bhm_summon"] })) {
+      if (e.id === boss.id || hit.has(e.id) || !a.hasHealth(e) || bosses.get(e.id)) continue;
+      const isPlayer = a.isPlayer(e);
+      if (isPlayer ? o.hitPlayers === false || !a.isTargetablePlayer(e) : !o.hitNonPlayers) continue;
+      const head = a.getHeadLocation(e);
+      if (pos.y < e.location.y - vr || pos.y > head.y + vr) continue;
+      if (Math.hypot(e.location.x - pos.x, e.location.z - pos.z) > p.radius + 0.3) continue;
+      hit.add(e.id);
+      if (o.onHit) castAt(o.onHit, [e], e);
+      if (o.stopAtEntity !== false) return end();
+    }
+    if (o.stopAtBlock !== false && !o.hugSurface && a.isSolidAt(dim, pos)) return end();
+    if (p.travelled >= p.range || p.ticks >= maxTicks) return end();
+    scheduler.after(1, step, token);
+  };
+  step();
+}

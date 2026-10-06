@@ -18,9 +18,30 @@ export const CustomCommandStatus = { Success: 0, Failure: 1 };
 export class MolangVariableMap {
   setFloat() {} setColorRGB() {} setColorRGBA() {} setVector3() {} setSpeedAndDirection() {}
 }
-export class Container {}
+/** Items with a stack size other than 64 (enough for the tests). */
+const STACK = { "minecraft:diamond_sword": 1, "minecraft:ender_pearl": 16, "minecraft:snowball": 16 };
 export class ItemStack {
-  constructor(typeId, amount = 1) { this.typeId = typeId; this.amount = amount; }
+  constructor(typeId, amount = 1) {
+    if (!/^[a-z0-9_]+:[a-z0-9_]+$/.test(typeId) || typeId.includes("unknown")) throw new Error(`invalid item ${typeId}`);
+    this.typeId = typeId; this.amount = amount; this.maxAmount = STACK[typeId] ?? 64;
+  }
+}
+/** Chest-like container: `size` slots, stacks merge up to maxAmount. */
+export class Container {
+  constructor(size = 27) { this.size = size; this.slots = []; }
+  addItem(stack) {
+    let left = stack.amount;
+    for (const s of this.slots) {
+      if (s.typeId !== stack.typeId || s.amount >= s.maxAmount) continue;
+      const k = Math.min(left, s.maxAmount - s.amount); s.amount += k; left -= k;
+      if (!left) return undefined;
+    }
+    while (left > 0 && this.slots.length < this.size) {
+      const k = Math.min(left, stack.maxAmount); this.slots.push(new ItemStack(stack.typeId, k)); left -= k;
+    }
+    return left > 0 ? new ItemStack(stack.typeId, left) : undefined;
+  }
+  get emptySlotsCount() { return this.size - this.slots.length; }
 }
 
 export const log = []; // [tick, kind, detail]
@@ -120,7 +141,7 @@ export class Player extends Entity {
 }
 
 class Dimension {
-  constructor(id) { this.id = id; this.entities = []; this.blocks = new Map(); }
+  constructor(id) { this.id = `minecraft:${id}`; this.entities = []; this.blocks = new Map(); this.containers = new Map(); }
   getEntities(q = {}) {
     return this.entities.filter((e) => {
       if (!e.isValid) return false;
@@ -133,7 +154,10 @@ class Dimension {
   }
   getPlayers(q = {}) { return this.getEntities(q).filter((e) => e instanceof Player); }
   spawnEntity(typeId, loc) {
-    if (typeId === "minecraft:lightning_bolt") { note("lightning", fmt(loc)); return new Entity(typeId, this, loc, { living: false }); } note("spawn", `${typeId} @ ${fmt(loc)}`); const e = new Entity(typeId, this, loc); world.afterEvents.entitySpawn.fire({ entity: e, cause: "Spawned" }); return e; }
+    if (typeId === "minecraft:lightning_bolt") { note("lightning", fmt(loc)); return new Entity(typeId, this, loc, { living: false }); } note("spawn", `${typeId} @ ${fmt(loc)}`); const e = new Entity(typeId, this, loc);
+    // Like the game: after-events fire once the current script has finished.
+    deferred.push(() => { if (e.isValid) world.afterEvents.entitySpawn.fire({ entity: e, cause: "Spawned" }); });
+    return e; }
   spawnItem(item, loc) { note("drop", `${item.typeId} x${item.amount}`); }
   spawnParticle(name, loc) { note("particle", `${name} @ ${fmt(loc)}`); }
   playSound(id, loc, o) { note("sound", `${id} v${o?.volume} p${o?.pitch}`); }
@@ -142,11 +166,36 @@ class Dimension {
     const dim = this;
     const typeId = dim.blocks.get(key) ?? (Math.floor(loc.y) < 64 ? "minecraft:grass_block" : "minecraft:air");
     return {
-      typeId, isAir: typeId === "minecraft:air", location: { x: Math.floor(loc.x), y: Math.floor(loc.y), z: Math.floor(loc.z) },
-      setType(t) { note("block", `${key} ${typeId} → ${t}`); dim.blocks.set(key, t); },
+      typeId, isAir: typeId === "minecraft:air", isLiquid: typeId.includes("water") || typeId.includes("lava"),
+      location: { x: Math.floor(loc.x), y: Math.floor(loc.y), z: Math.floor(loc.z) },
+      setType(t) {
+        note("block", `${key} ${typeId} → ${t}`); dim.blocks.set(key, t);
+        if (t === "minecraft:chest") dim.containers.set(key, new Container(27)); else dim.containers.delete(key);
+      },
+      getComponent(id) { return id === "minecraft:inventory" && dim.containers.has(key) ? { container: dim.containers.get(key) } : undefined; },
     };
   }
-  getBlockFromRay() { return undefined; }
+  /** Ray against the stub world: solid = anything not air (the ground is y < 64). */
+  getBlockFromRay(from, dir, o = {}) {
+    const max = o.maxDistance ?? 64;
+    for (let s = 0; s <= max; s += 0.05) {
+      const p = { x: from.x + dir.x * s, y: from.y + dir.y * s, z: from.z + dir.z * s };
+      const b = this.getBlock(p);
+      if (!b.isAir && !b.isLiquid) return { block: b, face: "Up", faceLocation: { x: p.x - b.location.x, y: p.y - b.location.y, z: p.z - b.location.z } };
+    }
+    return undefined;
+  }
+  /** Explosion: fires the before-event, then turns the remaining blocks to air. */
+  createExplosion(loc, radius) {
+    const blocks = [];
+    for (let x = -radius; x <= radius; x++) for (let y = -radius; y <= radius; y++) for (let z = -radius; z <= radius; z++) {
+      if (Math.hypot(x, y, z) <= radius) blocks.push(this.getBlock({ x: loc.x + x, y: loc.y + y, z: loc.z + z }));
+    }
+    let impacted = blocks;
+    world.beforeEvents.explosion.fire({ dimension: this, getImpactedBlocks: () => impacted, setImpactedBlocks: (b) => { impacted = b; } });
+    for (const b of impacted) if (!b.isAir) b.setType("minecraft:air");
+    return true;
+  }
   getBlockBelow(loc) { return { location: { x: Math.floor(loc.x), y: 63, z: Math.floor(loc.z) } }; }
 }
 
@@ -157,7 +206,7 @@ export const world = {
     ["worldLoad", "entitySpawn", "entityLoad", "entityHurt", "entityDie", "entityHitEntity", "playerInteractWithEntity", "dataDrivenEntityTrigger"]
       .map((n) => [n, new Signal()])
   ),
-  beforeEvents: { entityHurt: new Signal(), entityRemove: new Signal() },
+  beforeEvents: { entityHurt: new Signal(), entityRemove: new Signal(), explosion: new Signal() },
   difficulty: "Normal",
   gameRules: { mobGriefing: true },
   dyn: {},

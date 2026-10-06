@@ -18,7 +18,7 @@ export default {
     const boss = ctx.boss;
     const interval = o.interval ?? 1;
     const event = { triggerEntity: ctx.trigger, data: ctx.data };
-    const fire = () => executor.castByName(boss, o.onTick, event, { force: true, inherited: targets });
+    const fire = () => executor.castByName(boss, o.onTick, event, { force: true, inherited: targets, skillVars: ctx.skillVars });
     fire();
     for (let t = interval; t < o.duration; t += interval) scheduler.after(t, fire, ctx.token);
   },

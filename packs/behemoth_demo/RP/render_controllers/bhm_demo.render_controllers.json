@@ -1,0 +1,22 @@
+{
+  "format_version": "1.8.0",
+  "render_controllers": {
+    "controller.render.bhm_demo.tinted": {
+      "geometry": "Geometry.default",
+      "materials": [
+        {
+          "*": "Material.default"
+        }
+      ],
+      "textures": [
+        "Texture.default"
+      ],
+      "overlay_color": {
+        "r": "math.floor(q.property('bhm:tint') / 65536) / 255",
+        "g": "math.mod(math.floor(q.property('bhm:tint') / 256), 256) / 255",
+        "b": "math.mod(q.property('bhm:tint'), 256) / 255",
+        "a": "q.property('bhm:tint') == 16777215 ? 0.0 : 0.6"
+      }
+    }
+  }
+}

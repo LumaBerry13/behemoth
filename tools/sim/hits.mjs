@@ -10,6 +10,8 @@ const typeId = args[0] ?? "boss:dark_knight";
 const skills = (args[1] ?? "").split(",").filter(Boolean);
 
 const { mc, services } = await boot();
+// BHM_SEED=<n> makes runs repeatable (random skill picks, summon spots) for before/after comparisons.
+if (process.env.BHM_SEED) services.random.setSeed(Number(process.env.BHM_SEED));
 
 const dim = mc.world.getDimension("overworld");
 const entity = new mc.Entity(typeId, dim, { x: 0, y: 64, z: 0 }, { health: 1000, height: 3, speed: 0.3 });

@@ -13,6 +13,7 @@
  * @property {typeof import("./Logger.js").Log} log
  * @property {import("./Settings.js").Settings} settings
  * @property {import("./Registrar.js").Registrar} registrar
+ * @property {import("./Variables.js").Variables} vars
  */
 
 export const services = /** @type {Services} */ ({});

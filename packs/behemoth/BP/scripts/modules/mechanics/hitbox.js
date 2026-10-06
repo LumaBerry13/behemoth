@@ -116,7 +116,7 @@ export default {
 
         hits.set(e.id, now + interval);
         const before = log.isDebug ? a.getHealth(e).current : 0;
-        ctx.services.executor.castByName(boss, o.onHit, { triggerEntity: e, data: ctx.data }, { force: true, inherited: [e] });
+        ctx.services.executor.castByName(boss, o.onHit, { triggerEntity: e, data: ctx.data }, { force: true, inherited: [e], skillVars: ctx.skillVars });
         if (log.isDebug) log.debug(`hitbox ${o.onHit}: hit ${e.typeId} hp ${before} → ${a.getHealth(e).current}`);
       }
     }

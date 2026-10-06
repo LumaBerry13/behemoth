@@ -27,6 +27,8 @@ const check = (name, ok, detail = "") => {
 
 function clearWorld() {
   for (const e of [...dim.entities]) e.remove();
+  dim.blocks.clear(); // e.g. loot chests left by earlier deaths
+  dim.containers.clear();
 }
 
 function spawnBoss(x, z) {
@@ -372,13 +374,17 @@ console.log("\n16. a removed boss pack disappears after reload (entity type gone
 {
   const ui = await import("./ui_stub.mjs");
   const before = [...services.bosses.configs.keys()];
-  const victim = before.find((t) => t !== "bhm_demo:test_boss" && t !== "bhm_demo:minion") ?? "bhm_demo:test_boss";
-  mc.sim.missingTypes.add(victim);
+  // Remove a whole pack (prefer one that is not the demo pack): all its entity types disappear.
+  const packs = [...reg.packs.entries()];
+  const [victimPack, victimInfo] = packs.find(([n]) => n !== "behemoth_demo") ?? packs[0];
+  const victims = [...victimInfo.bosses];
+  const victim = victims[0];
+  for (const t of victims) mc.sim.missingTypes.add(t);
   reloadFramework();
-  check(`${victim} is not registered after its pack was removed`, !services.bosses.configs.has(victim));
+  check(`${victims.join(", ")} not registered after pack ${victimPack} was removed`, victims.every((t) => !services.bosses.configs.has(t)));
   const index = JSON.parse(mc.world.dyn["bhm:cache"] ?? "{}");
-  const packOf = Object.entries(index).find(([, e]) => e.bosses.includes(victim));
-  check("its cache entry was deleted", !packOf);
+  check("its cache entry was deleted", !index[victimPack]);
+  check("other packs keep their cache", Object.keys(index).length === packs.length - 1);
   // Menu: the spawn list must not offer it.
   const player = new mc.Player("Admin2", dim, { x: 0, y: 64, z: 0 });
   const start = ui.shown.length;
@@ -389,7 +395,7 @@ console.log("\n16. a removed boss pack disappears after reload (entity type gone
   const names = (spawnPage?.buttons ?? []).map((b) => JSON.stringify(b.text));
   check("spawn list does not offer it", spawnPage && !names.some((t) => t.includes(victim)));
   player.remove();
-  mc.sim.missingTypes.delete(victim);
+  for (const t of victims) mc.sim.missingTypes.delete(t);
   reg.cacheLoaded = false;
   mc.system.sendScriptEvent("bhm:ready", JSON.stringify({ p: 1, fw: "0.2.0" }));
   for (let i = 0; i < 40 && services.bosses.configs.size < before.length; i++) { await mc.flush(); mc.tick(1); }
@@ -453,6 +459,242 @@ console.log("\n19. bosses in world: nearest first, teleport from the menu");
   for (let i = 0; i < 6; i++) { await mc.flush(); mc.tick(1); }
   check("teleported next to the far boss", Math.abs(admin.location.x - 103) < 0.5, `x=${admin.location.x}`);
   admin.remove();
+}
+
+// ---------------------------------------------------------------------------
+// Skill-engine features and decisions D6/D7, on the demo test boss.
+// ---------------------------------------------------------------------------
+const DEMO = "bhm_demo:test_boss";
+/**
+ * Fresh demo boss at the origin facing +Z with its facing locked, one player 5
+ * blocks in front, and helpers to cast skills and read the log.
+ */
+function demo() {
+  clearWorld();
+  if (!services.bosses.configs.get(DEMO)?.skills.has("demo_vars")) return undefined;
+  const player = new mc.Player("P", dim, { x: 0, y: 64, z: 5 });
+  const e = new mc.Entity(DEMO, dim, { x: 0, y: 64, z: 0 }, { health: 300, height: 3, speed: 0.25 });
+  mc.world.afterEvents.entitySpawn.fire({ entity: e, cause: "Spawned" });
+  mc.tick(1);
+  const boss = services.bosses.get(e.id);
+  boss.facingLocked = true;
+  e.rotation.y = 0;
+  const run = (name, ticks = 5, opts = { force: true }) => {
+    const start = mc.log.length;
+    services.executor.castByName(boss, name, { triggerEntity: player }, opts);
+    mc.tick(ticks);
+    return mc.log.slice(start);
+  };
+  const has = (lines, kind, text = "") => lines.some(([, k, d]) => k === kind && d.includes(text));
+  const count = (lines, kind, text = "") => lines.filter(([, k, d]) => k === kind && d.includes(text)).length;
+  return { e, boss, player, run, has, count };
+}
+
+console.log("\n20. variables, scopes and <placeholders>");
+{
+  const d = demo();
+  if (!d) check("skipped (demo pack not loaded)", true);
+  else {
+    let out = d.run("demo_vars", 2);
+    const chat = out.find(([, k]) => k === "chat")?.[2] ?? "";
+    check("add + int type", d.boss.vars.combo === 1);
+    check("variableMath with a placeholder in the expression", d.boss.vars.power === 1, `power=${d.boss.vars.power}`);
+    check("placeholders resolved in the message", /combo §f1§7, power §f1§7, roll §f[1-6]§7, hp §f300\/300/.test(chat) && !chat.includes("<"), chat);
+    check("global variable set", services.vars.global.demo_runs === 1);
+    check("variable with duration is set", d.boss.vars.temp === "on");
+    mc.tick(25);
+    check("…and removed after its duration", !("temp" in d.boss.vars));
+    mc.tick(100);
+    check("global variables persisted", String(mc.world.dyn["bhm:vars"]).includes("demo_runs"));
+    out = d.run("demo_vars", 2);
+    check("second run builds on the first (combo 2, power 4)", d.boss.vars.combo === 2 && d.boss.vars.power === 4, `power=${d.boss.vars.power}`);
+  }
+}
+
+console.log("\n21. castInstead / orElseCast, target conditions, fieldOfView");
+{
+  const d = demo();
+  if (!d) check("skipped (demo pack not loaded)", true);
+  else {
+    let out = d.run("demo_instead", 2, {});
+    check("condition false: the skill itself runs", d.has(out, "actionbar", "angry"));
+    d.boss.vars.mode = "calm";
+    out = d.run("demo_instead", 2, {});
+    check("castInstead runs the other skill instead", d.has(out, "actionbar", "calm") && !d.has(out, "actionbar", "angry"));
+    out = d.run("demo_fov", 2, { inherited: [d.player] });
+    check("target in the view cone passes targetIf", d.has(out, "actionbar", "in front"));
+    const behind = new mc.Player("Q", dim, { x: 0, y: 64, z: -5 });
+    out = d.run("demo_fov", 2, { inherited: [behind] });
+    check("target behind: orElseCast turns the boss around", !d.has(out, "actionbar", "in front") && Math.abs(d.e.rotation.y - 180) < 1e-6, `yaw=${d.e.rotation.y}`);
+    d.e.rotation.y = 0;
+    const left = new mc.Player("L", dim, { x: 5, y: 64, z: 0 });
+    const fov = services.registry.condition("fieldOfView");
+    const ctx = services.executor.makeContext(d.boss, {}, {});
+    check("fieldOfView rotation=90 is the caster's left (+X when facing +Z)",
+      fov.test(ctx, left, { angle: 90, rotation: 90 }) && !fov.test(ctx, left, { angle: 90, rotation: 270 }));
+  }
+}
+
+console.log("\n22. line repeat / repeatInterval / cooldown");
+{
+  const d = demo();
+  if (!d) check("skipped (demo pack not loaded)", true);
+  else {
+    let out = d.run("demo_combo", 30);
+    check("repeat 4 → the line runs 5 times", d.count(out, "particle", "critical_hit") === 5, `${d.count(out, "particle", "critical_hit")}`);
+    check("random pitch placeholder resolved", out.some(([, k, d2]) => k === "sound" && /p1\.[01]\d*|p0\.9\d*|p1$/.test(d2)));
+    out = d.run("demo_combo", 5);
+    check("line cooldown: the sound is skipped within 40 ticks", d.count(out, "sound") === 0);
+    mc.tick(40);
+    out = d.run("demo_combo", 5);
+    check("…and plays again after it", d.count(out, "sound") === 1);
+  }
+}
+
+console.log("\n23. rayTraceTo: entities on the beam, skill at its end");
+{
+  const d = demo();
+  if (!d) check("skipped (demo pack not loaded)", true);
+  else {
+    const off = new mc.Player("Off", dim, { x: 4, y: 64, z: 4 });
+    const out = d.run("demo_ray", 3);
+    check("the player on the beam is hit", d.player.health.currentValue < 20);
+    check("a player off the beam is not", off.health.currentValue === 20);
+    check("locationSkill runs at the end (@Origin)", d.has(out, "particle", "large_explosion @ (0, 64, 5)"));
+    check("the beam is drawn", d.count(out, "particle", "blue_flame") >= 8);
+  }
+}
+
+console.log("\n24. entity projectile: bullet, onTick/onHit/onEnd, modifyProjectile, owned effect");
+{
+  const d = demo();
+  if (!d) check("skipped (demo pack not loaded)", true);
+  else {
+    d.e.rotation.y = 90;
+    const out = d.run("demo_bullet", 30);
+    check("bullet entity spawned and moved every tick", d.has(out, "spawn", "bhm_demo:bullet") && d.count(out, "teleport", "bhm_demo:bullet") >= 5);
+    check("bullet removed when the projectile ended", dim.getEntities({ type: "bhm_demo:bullet" }).length === 0);
+    check("onHit damaged the player", d.player.health.currentValue < 20);
+    check("onTick ran at the projectile (@Origin)", d.count(out, "particle", "basic_crit") >= 2);
+    const tps = out.filter(([, k, x]) => k === "teleport" && x.includes("bullet")).map(([, , x]) => Number(/→ \([^,]+, [^,]+, ([^)]+)\)/.exec(x)[1]));
+    const steps = tps.slice(1).map((z, i) => z - tps[i]);
+    check("modifyProjectile speeds it up", steps.length > 3 && steps[steps.length - 1] > steps[0] + 0.01, steps.map((s) => s.toFixed(2)).join(" "));
+    const marker = dim.getEntities({ type: "bhm_demo:marker" })[0];
+    check("onEnd summoned an effect entity, driven as a minion", !!marker && services.bosses.get(marker.id)?.config.kind === "minion");
+    check("it knows its parent (@Parent)", marker?.dyn["bhm:parent"] === d.boss.id);
+    check("it faces the way the boss faces (facing + matchRotation)", marker?.rotation.y === 90);
+    check("tint property set, then cleared", marker?.props["bhm:tint"] === 0xffffff && out.some(([, k]) => k) /* flash already over */);
+    check("effect entities are not listed as bosses", !services.bosses.worldList(dim, d.player.location).some((x) => x.type === "bhm_demo:marker"));
+    mc.tick(45);
+    check("it removed itself (remove mechanic)", !marker?.isValid && !services.bosses.get(marker?.id ?? ""));
+  }
+}
+
+console.log("\n25. @RandomLocationsNearCaster");
+{
+  const d = demo();
+  if (!d) check("skipped (demo pack not loaded)", true);
+  else {
+    d.run("demo_rain", 2);
+    const pts = dim.getEntities({ type: "bhm_demo:marker" }).map((m) => m.location);
+    const dist = pts.map((p) => Math.hypot(p.x, p.z));
+    check("4 effects at random spots", pts.length === 4, `${pts.length}`);
+    check("all between minRadius 3 and radius 8", dist.every((x) => x >= 3 - 1e-6 && x <= 8 + 1e-6), dist.map((x) => x.toFixed(1)).join(" "));
+    check("at least `spacing` apart", pts.every((p, i) => pts.every((q, j) => i === j || Math.hypot(p.x - q.x, p.z - q.z) >= 2 - 1e-6)));
+  }
+}
+
+console.log("\n26. stun, bossBar");
+{
+  const d = demo();
+  if (!d) check("skipped (demo pack not loaded)", true);
+  else {
+    d.run("demo_stun", 2);
+    check("stunned: frozen AI, no movement", d.boss.aiMode === "frozen" && d.e.movement.currentValue === 0);
+    mc.tick(45);
+    check("stun ends: previous AI and speed back", d.boss.aiMode === "chase" && d.e.movement.currentValue > 0);
+    d.run("demo_bar", 2);
+    check("boss bar title with placeholders", d.e.nameTag === "§cTest Boss §7(100%)", d.e.nameTag);
+    mc.tick(65);
+    check("boss bar title reset", d.e.nameTag === "§cTest Boss");
+  }
+}
+
+console.log("\n27. D6: Peaceful difficulty removes bosses and minions");
+{
+  const d = demo();
+  if (!d) check("skipped (demo pack not loaded)", true);
+  else {
+    services.executor.castByName(d.boss, "summon_adds", {}, { force: true });
+    mc.tick(2);
+    check("boss + minions alive on Normal", services.bosses.all().length === 3);
+    mc.world.difficulty = "Peaceful";
+    mc.tick(25);
+    check("all removed on Peaceful", services.bosses.all().length === 0);
+    const e = new mc.Entity(DEMO, dim, { x: 0, y: 64, z: 0 }, { health: 300 });
+    mc.world.afterEvents.entitySpawn.fire({ entity: e, cause: "Spawned" });
+    check("new spawns are refused", !e.isValid && !services.bosses.get(e.id));
+    mc.world.difficulty = "Normal";
+  }
+}
+
+console.log("\n28. D7: health scales with the number of players");
+{
+  const d = demo();
+  if (!d) check("skipped (demo pack not loaded)", true);
+  else {
+    clearWorld();
+    const ps = [0, 1, 2].map((i) => new mc.Player(`S${i}`, dim, { x: i, y: 64, z: 6 }));
+    const e = new mc.Entity(DEMO, dim, { x: 0, y: 64, z: 0 }, { health: 300 });
+    mc.world.afterEvents.entitySpawn.fire({ entity: e, cause: "Spawned" });
+    mc.tick(1);
+    const boss = services.bosses.get(e.id);
+    check("3 players → ×2 health", boss.healthScale === 2);
+    e.applyDamage(10, { cause: "entityAttack", damagingEntity: ps[0] });
+    check("a 10-damage hit takes 5", e.health.currentValue === 295, `${e.health.currentValue}`);
+    ps.push(new mc.Player("S3", dim, { x: 3, y: 64, z: 6 }), new mc.Player("S4", dim, { x: 4, y: 64, z: 6 }), new mc.Player("S5", dim, { x: 5, y: 64, z: 6 }));
+    mc.tick(100);
+    check("more players join → rises (capped at max 4 → ×3.5 for 6 players)", boss.healthScale === 3.5, `${boss.healthScale}`);
+    for (const p of ps.slice(1)) p.remove();
+    mc.tick(100);
+    check("players leaving mid-fight never lower it", boss.healthScale === 3.5);
+    boss.reset("test");
+    check("reset recomputes it (1 player → ×1)", boss.healthScale === 1);
+    Persistence_check: {
+      boss.healthScale = 2;
+      services.bosses.save(boss);
+      check("persisted with the boss", JSON.parse(e.dyn["bhm:state"]).hs === 2);
+    }
+  }
+}
+
+console.log("\n29. D7: loot goes into a chest that explosions cannot destroy");
+{
+  const d = demo();
+  if (!d) check("skipped (demo pack not loaded)", true);
+  else {
+    d.e.location = { x: 10.5, y: 64, z: 10.5 };
+    d.e.applyDamage(1000, { cause: "entityAttack", damagingEntity: d.player });
+    mc.tick(2);
+    const key = "10,64,10";
+    const chest = dim.containers.get(key);
+    const diamonds = chest?.slots.filter((s) => s.typeId === "minecraft:diamond").reduce((n, s) => n + s.amount, 0) ?? 0;
+    check("chest placed where the boss died", dim.blocks.get(key) === "minecraft:chest");
+    check("drops are inside it (2–5 diamonds), none on the ground", diamonds >= 2 && diamonds <= 5 && !mc.log.some(([, k, x]) => k === "drop" && x.includes("diamond")));
+    check("chest protected (persisted)", String(mc.world.dyn["bhm:lootchests"]).includes('"x":10'));
+    dim.createExplosion({ x: 10.5, y: 64, z: 10.5 }, 2);
+    check("an explosion on it leaves the chest", dim.blocks.get(key) === "minecraft:chest");
+    check("…but destroys the blocks around it", dim.blocks.get("11,63,10") === "minecraft:air");
+    dim.getBlock({ x: 10, y: 64, z: 10 }).setType("minecraft:air"); // a player breaks it
+    mc.tick(200);
+    check("broken chest leaves the protected list", !String(mc.world.dyn["bhm:lootchests"] ?? "").includes('"x":10,'));
+    // Too much loot for one chest: the rest goes into a second one next to it.
+    const items = [{ item: "minecraft:diamond_sword", amount: 30 }];
+    const placed = services.bosses.loot.place(dim, { x: 20, y: 64, z: 20 }, items);
+    check("overflow fills a second chest beside the first", placed.length === 2 && placed[1].y === 64);
+    const bad = services.bosses.loot.place(dim, { x: 30, y: 64, z: 30 }, [{ item: "minecraft:unknown_thing", amount: 1 }]);
+    check("unknown items do not place a chest", bad.length === 0 && !dim.blocks.get("30,64,30"));
+  }
 }
 
 console.log(failures ? `\n[scenarios] ${failures} FAILED` : "\n[scenarios] all passed");

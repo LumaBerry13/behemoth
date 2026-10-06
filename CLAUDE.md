@@ -8,7 +8,7 @@ Persistent context for Claude Code sessions. The **single source of truth** is
 
 **Behemoth** (renamed from its working title on 2026-10-06) is a boss framework for Minecraft Bedrock on the Script API. It is shipped as a **separate library pack** (decision D1): users install the framework once; each **boss pack** contains only its boss config(s), entity/model/animations and the standard **connector**, and registers its bosses with the framework over script events. Plus an offline **Python converter** (`bhmconv`) that turns MythicMobs + ModelEngine bosses (YAML + Bedrock model/animations) into standalone Behemoth boss packs.
 
-**Status (2026-10-06):** M1 + M2 done (Dark Knight converted and tested in-game, incl. reload). M4 in progress: reset/leash, profiler, all §13 v1 modules, the library split + cache-first registration protocol, and the `/behemoth` chest-UI menu are in. Next: in-game test of the library split + menu, the shared particle library, then the next real boss (`private/TheArchivist/` is a raw Java ModelEngine/MythicMobs pack — needs a Bedrock model first, or converter support for Java ModelEngine models; ask the owner). The Dark Knight's stones entity is intentionally NOT converted (summons a `minecraft:pig`, job `mob_types`).
+**Status (2026-10-06):** M1 + M2 done (Dark Knight converted and tested in-game, incl. reload). M4 in progress: reset/leash, profiler, all §13 v1 modules, the library split + cache-first registration protocol, the `/behemoth` chest-UI menu, and the Archivist feature pass (variables/placeholders, entity projectiles, effect entities, rotation/ray-trace/stun/tint/bossBar, D6/D7) are in. The converter does NOT map the Archivist-pass modules yet — that happens with the Archivist conversion. Next: in-game test of the library split + menu, the shared particle library, then the next real boss (`private/TheArchivist/` is a raw Java ModelEngine/MythicMobs pack — needs a Bedrock model first, or converter support for Java ModelEngine models; ask the owner). The Dark Knight's stones entity is intentionally NOT converted (summons a `minecraft:pig`, job `mob_types`).
 
 ## Dev commands
 
@@ -28,10 +28,11 @@ Persistent context for Claude Code sessions. The **single source of truth** is
 
 - **D1 [DECIDED 2026-10-06]:** framework is a separate library pack; boss packs register over script events (cache-first protocol, below).
 - **D2:** `@minecraft/server` **2.10.0**, `@minecraft/server-ui` **2.2.0**, `min_engine_version` [1, 26, 50] — owner's game is 1.26.52 (verified from the install).
-- Provisional (owner to confirm): **D5** bake only bones the YAML references via `@modelpart` (+ `bone_aliases`, `blades`); **D9** plain JS + JSDoc + `types/config.d.ts`, no build step.
+- **D3–D7, D9 [DECIDED 2026-10-06]:** D3 execution rules = design doc §7 defaults; D4 converted purchased bosses stay in `private/`; D5 bake only bones the YAML references (+ `bone_aliases`, `blades`); D6 bosses/minions removed on Peaceful (`allowPeaceful` opts out); D7 `stats.healthScaling` + loot chest where the boss died, protected from explosions (`loot.mode: "ground"` opts out); D9 plain JS + JSDoc + `types/config.d.ts`.
+- **D8 deferred:** owner's machine is too fast to measure a CPU budget; revisit later.
 - **D10 [DECIDED 2026-10-06]:** no licence, all rights reserved (owner may open it later) — don't add a LICENSE file.
 - Java ModelEngine models are converted to Bedrock **by hand** (owner, Blockbench); the converter reads `.bbmodel` only for timeline markers (M3 remainder).
-- Still open: D3 execution rules, D4 licensing, D6 Peaceful/family, D7 scaling & drops, D8 CPU budget (measure with the menu's Performance item). Don't silently pick an answer — ask, then record [DECIDED].
+- New open questions: don't silently pick an answer — ask, then record [DECIDED].
 
 ## Before writing any code
 
@@ -113,8 +114,11 @@ Execution semantics:
 - `skill`/`randomSkill` respect the called skill's cooldown and conditions; phase `onEnter`, `aura` ticks, `hitbox`/`projectile` hits and menu skill casts force.
 - `exclusive` skills take the cast lock and respect `config.gcd`; `gcd` mechanic + `offGcd` condition give MythicMobs-style GCD.
 - Death cancels everything, then `onDeath` skills run for up to 100 ticks.
+- Line keys `repeat` + `repeatInterval` (non-blocking) and `cooldown` (per line, MythicMobs `cd=`); skill key `targetIf` (TargetConditions: filters the inherited targets, none left = no run); any condition may end in ` castInstead <skill>` / ` orElseCast <skill>`.
+- Variables (`core/Variables.js`, `services.vars`): scopes `caster.` (default, persisted) / `target.` / `trigger.` / `skill.` (per run, passed to called skills) / `global.` (world property `bhm:vars`); `type`, `duration`; config `variables` = initial values. `<placeholders>` in option strings are resolved per execution by the executor (`step.dynamic`); validation substitutes 1. Pure helpers (`TOKEN`, `hasPlaceholder`, `coerce`, `sampleValue`) live in `SkillParser.js` so `npm run validate` stays game-free.
+- Skills started from a projectile / ray trace get `ctx.origin` (`@Origin`) and `ctx.projectile` (`modifyProjectile`). Mechanics that take a targeter as an option validate it with `vctx.checkTargeter` and resolve it with `executor.resolveTargeter`.
 
-Other runtime features: `damageModifiers`, `death.event` + `removeAfter` backstop, `baseStates` (`bhm:idle_state`/`bhm:walk_state`), `restPose`, facing lock, persisted speed multiplier, timed summons, reset/leash (`onReset`), script-level invulnerability, no boss-vs-boss damage (`ai.friendlyFire` opt-in), `tempBlocks` (air only, mobGriefing, restored across reloads), compact baked tracks (`TrackCodec`: `{q, n, d: base64 int16}`).
+Other runtime features: D6 Peaceful removal, D7 health scaling (incoming damage ÷ `boss.healthScale`, L38) and loot chests (`core/LootChests.js`, explosion before-event, `bhm:lootchests`), stun (`BossInstance.stun`), summon parent link (`bhm:parent` dynamic property → `@Parent`), `damageModifiers`, `death.event` + `removeAfter` backstop, `baseStates` (`bhm:idle_state`/`bhm:walk_state`), `restPose`, facing lock, persisted speed multiplier, timed summons, reset/leash (`onReset`), script-level invulnerability, no boss-vs-boss damage (`ai.friendlyFire` opt-in), `tempBlocks` (air only, mobGriefing, restored across reloads), compact baked tracks (`TrackCodec`: `{q, n, d: base64 int16}`).
 
 MythicMobs → Behemoth translation rules (converter `mythic.py`):
 - Metaskill `Cooldown` is SECONDS (×20). Delays, timers and `gcd` are ticks.

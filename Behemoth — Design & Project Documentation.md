@@ -110,6 +110,10 @@ The Script API can run all of MythicMobs' logic, but it cannot change an entity 
 | L33 | Script events carry strings only; the maximum message length and delivery delay are undocumented (measured 2026-10-06 on 1.26.52: messages of at least 262144 chars accepted, delivered 1 tick after sending); functions cannot cross packs; each pack has its own dynamic-property storage. | Connector streams the payload in parts (starts at 65536 chars, halves on refusal; typical boss packs fit in one message) with an FNV-1a checksum; configs must be JSON; the framework caches payloads in its own world properties (≤ 30000 chars per part); `/behemoth` → Diagnostics measures the real limit and delay. | Solved by design |
 | L34 | Chest-UI renders forms through a `server_form.json` override; another pack overriding the same file can conflict. Item type ids in Chest-UI map to numeric ids that change between versions. | Vendored Chest-UI (CC BY 4.0) with only the 54-slot layout; icons referenced by texture path only. | Accepted |
 | L35 | Removing a boss pack from a world leaves the framework's cached configs behind; the menu listed bosses whose entity type no longer existed and spawning them did nothing. | Install skips configs whose type `EntityTypes.get` cannot find; cached packs that stay silent after `bhm:ready` are unloaded and their cache removed; the known-boss list is pruned the same way. | Solved by design |
+| L36 | Bedrock has one boss bar per entity, showing its name and health; scripts cannot add bars or change colour, style or value (MythicMobs `barCreate`/`barSet`). | `bossBar` mechanic sets the bar title through the name tag (placeholders and colour codes work); colour/style/value are dropped by the converter. \[VERIFY\] the bar follows name-tag changes live. | Approximated |
+| L37 | ModelEngine `tint`/`brightness` recolour the model at runtime; Bedrock can only do that in the RP (render controller `overlay_color`), driven by an entity property. | `tint` mechanic writes the int property `bhm:tint` (0xRRGGBB, white = none); the entity defines it and its render controller turns it into an overlay (demo: `controller.render.bhm_demo.tinted`). Brightness/emissive is RP-only. \[VERIFY\] int property range up to 16777215. | Approximated |
+| L38 | Max health cannot be changed from scripts, so it cannot grow with the number of players (D7). | Health scaling divides incoming damage by the scale in the `entityHurt` before-event; the bar still shows the true fraction. \[VERIFY\] fractional damage is applied in-game. | Solved by design |
+| L39 | After-events (e.g. `entitySpawn` of a summoned entity) fire after the spawning script finishes, not inside `spawnEntity`. | Summons get their parent link (`bhm:parent`) right after `spawnEntity`, before their `onSpawn` skills run; the simulator models the deferred event. | Solved by design |
 | L28 | ModelEngine part pivots + offsets don't describe where a weapon actually is (the `edge4` pivot is the hilt). | Converter `blades`: bakes the blade tip; hits use a hilt→tip capsule, summons land at the tip. Verified per attack with `npm run sim:hits`. | Solved by design |
 
 ### API notes (all \[VERIFY\] before use)
@@ -248,7 +252,7 @@ There are engine limits on property count per entity type and enum values per pr
 
 - `minecraft:boss` for the boss bar (text updated through `nameTag`).
 - Health, collision box, knockback resistance, and scale set to match the boss config.
-- A family that survives Peaceful difficulty, or explicit handling of Peaceful despawn \[OPEN\].
+- Peaceful handling \[DECIDED 2026-10-06, D6\]: the framework removes every Behemoth entity on Peaceful and refuses new spawns (config `allowPeaceful: true` opts out).
 - `minecraft:persistent` (or equivalent) so the boss does not despawn naturally \[VERIFY\].
 
 ### RP side of the stub
@@ -287,9 +291,9 @@ export default {
 };
 ```
 
-### Which bones get baked \[OPEN\]
+### Which bones get baked \[DECIDED 2026-10-06, D5\]
 
-Only tagged bones, to keep data small (3 bones × 60 ticks × 3 floats ≈ 540 numbers per animation). Two options: a naming convention such as an `bhm_` prefix in Blockbench (fully automatic), or a bone list in the boss config (no model edits).
+Only the bones the MythicMobs YAML references through `@modelpart`, plus job-file `bone_aliases` and `blades` (blade tips), to keep data small (3 bones × 60 ticks × 3 floats ≈ 540 numbers per animation). No model edits and no bone naming convention.
 
 ### Runtime lookup
 
@@ -332,6 +336,20 @@ A skill runs as: trigger fires → conditions checked → targeter resolves targ
 
 Plus per-skill cooldown and a global cooldown (GCD), both in ticks. Skill lines are parsed and validated once at startup, never per execution.
 
+Added 2026-10-06 (Archivist feature pass):
+
+| Key | Meaning |
+| --- | --- |
+| `delay` | On a line: run it N ticks later without pausing the sequence (MythicMobs `delay=`). |
+| `repeat`, `repeatInterval` | On a line: run it N more times, `repeatInterval` ticks apart (default 1), without pausing. |
+| `cooldown` | On a child line: skip it while on cooldown (MythicMobs per-mechanic `cd=`). On a skill: the skill cooldown. |
+| `targetIf` | On a skill: target conditions (MythicMobs TargetConditions), tested on each inherited target (else the current target); failing targets are dropped, none left = the skill does not run. |
+| `… castInstead <skill>` / `… orElseCast <skill>` | Suffix on any condition: cast another skill instead when it passes / fails. |
+
+**Variables:** names carry a scope prefix — `caster.` (default, persisted with the boss), `target.`, `trigger.` (a Behemoth entity's own vars, else an in-memory per-entity store), `skill.` (shared by one run and the skills it calls), `global.` (world property `bhm:vars`). `setVariable` supports `type` (int/float/string/boolean) and `duration` (ticks); `variableMath` evaluates an expression (`x` = current value) with a small safe parser. Initial caster values come from config `variables`. Conditions: `variable`, `varEquals`, `variableIsSet`.
+
+**Placeholders:** any option string may contain `<caster.var.x>`, `<target.var.x>`, `<skill.var.x>`, `<global.var.x>`, `<caster.hp>`, `<caster.mhp>`, `<caster.php>`, `<caster.name>`, `<caster.phase>`, `<caster.l.x>`, the same for `target.`/`trigger.`, and `<random.float.AtoB>` / `<random.int.AtoB>`. They are resolved per execution; numeric results become numbers. Validation substitutes 1 for each placeholder.
+
 ### Triggers → Script API sources
 
 | MythicMobs trigger | Source |
@@ -349,11 +367,11 @@ Plus per-skill cooldown and a global cooldown (GCD), both in ticks. Skill lines 
 
 ### Targeters (common set)
 
-`@self`, `@target`, `@trigger`, `@PlayersInRadius`, `@EntitiesInRadius`, `@MobsInRadius`, `@NearestPlayer`, `@RandomPlayer`, `@ThreatTable` / highest threat, `@Cone`, `@Ring` / circle locations, `@TargetLocation`, `@SelfLocation` with offsets, `@Bone:<name>` (framework extra, from baked tracks), line-of-sight filters. Built on `getEntities` query options, ray methods and vector math.
+`@self`, `@target`, `@trigger`, `@PlayersInRadius`, `@EntitiesInRadius`, `@MobsInRadius`, `@NearestPlayer`, `@RandomPlayer`, `@ThreatTable` / highest threat, `@Cone`, `@Ring` / circle locations, `@TargetLocation`, `@SelfLocation` with offsets, `@Bone:<name>` (framework extra, from baked tracks), line-of-sight filters. Built on `getEntities` query options, ray methods and vector math. Added 2026-10-06: `@Origin` (where a projectile / ray trace is), `@Parent` (the summoner), `@RandomLocationsNearCaster` (`@RLNC`).
 
 ### Conditions (common set)
 
-Health / health percent, distance, line of sight, chance, has tag, scoreboard value, height / Y level, is in block, time of day, weather, phase, variable compare, target exists, player count nearby, cooldown ready. Biome and light level \[VERIFY API\].
+Health / health percent, distance, line of sight, chance, has tag, scoreboard value, height / Y level, is in block, time of day, weather, phase, variable compare, target exists, player count nearby, cooldown ready. Biome and light level \[VERIFY API\]. Added 2026-10-06: `fieldOfView{angle;rotation}` (cone centred on yaw − rotation; 90 = the caster's left \[VERIFY\] against MythicMobs), `inCombat`, `varEquals`, `variableIsSet`, `directionalVelocity`, `altitude`.
 
 ### Mechanics (common set, \~40)
 
@@ -363,10 +381,11 @@ Health / health percent, distance, line of sight, chance, has tag, scoreboard va
 - **Visual and audio:** particle, particle ring / sphere / line / helix (shapes), sound, state (animation), set property (visual), message, title / actionbar, camera shake.
 - **World:** summon (with caps), block wave / temporary blocks (restored), set block.
 - **Flow / meta:** delay, skill / metaskill, randomskill, chained skills, set variable, signal, phase change, aura (repeating effect for N ticks), cancel skill.
+- **Added 2026-10-06 (from the Archivist):** `variableMath`, `setRotation`, `matchRotation`, `rayTraceTo` (beam: `entitySkill` on entities along it, `locationSkill` at its end), `bossBar` (L36), `remove`, `stun`, `tint` (L37), `modifyProjectile`. `projectile` now flies an optional **bullet entity** (any entity type from the boss pack, moved by the script every tick and removed when it ends, bound to the boss) and runs `onStart`/`onTick`/`onHit`/`onEnd` skills at its position (`@Origin`), with gravity, inertia, `hugSurface`, `origin`/`toward` targeters and per-entity hits. `summon` records the parent (`@Parent`) and can face the way the caster faces. Effect entities (telegraphs, ground effects, slashes) are `kind: "minion"` configs with no AI that remove themselves.
 
-### Execution rules \[OPEN, recommended defaults\]
+### Execution rules \[DECIDED 2026-10-06, D3: the defaults below\]
 
-| Question | Recommended default |
+| Question | Rule |
 | --- | --- |
 | Can skills run concurrently? | Yes, but a skill marked `exclusive` takes a casting lock that blocks other `exclusive` skills. |
 | Casting lock during animations? | Optional per skill: lock until `animEnd`. |
@@ -407,7 +426,7 @@ export default {
   animations: anims,                     // converter output
   ai: { default: "chase", leashRange: 40, resetAfterNoPlayers: 600 },
   threat: { enabled: true },
-  scaling: { perExtraPlayer: { health: 0.25 } },  // [OPEN]
+  // stats.healthScaling: { perPlayer: 0.25 }  (D7, decided)
   phases: [
     { id: 1, untilHealthPct: 50 },
     { id: 2, onEnter: ["phase2_roar"], properties: { "bhm:phase": 2 } }
@@ -454,7 +473,7 @@ The converter is an offline Python CLI that turns a boss's model and animation f
 - `*.geo.json` — bone hierarchy, pivots, rotations.
 - `*.animation.json` — keyframes, interpolation modes, timelines.
 - Optional `.bbmodel` — Blockbench timeline markers (effect / instruction channels) if not exported to Bedrock JSON.
-- Optional bone list or naming convention for which bones to bake \[OPEN\].
+- Which bones to bake: decided (D5) — the ones the YAML references, plus job `bone_aliases` / `blades`.
 - Optional MythicMobs YAML (later milestone) for config skeleton hints.
 
 ### Processing
@@ -505,13 +524,13 @@ Phase, spawn/arena point, cooldown end ticks (stored relative to world tick), va
 
 - Targeters exclude creative and spectator players.
 - Handle players dying, respawning, logging out or changing dimension mid-fight (drop from threat table).
-- Health / damage scaling by player count \[OPEN\].
-- Drops by damage contribution or last hit \[OPEN\].
+- Health scaling by player count \[DECIDED 2026-10-06, D7\]: config `stats.healthScaling { perPlayer, radius?, max? }` → effective health × (1 + perPlayer × (players − 1)), counting targetable players near the boss; set on spawn and reset, only rises during a fight, persisted (L38).
+- Drops \[DECIDED 2026-10-06, D7\]: everything goes into a **loot chest** placed on the ground where the boss died (more chests beside it if needed), so players share it out themselves. Loot chests are protected from explosions (a boss exploding on death, creepers, TNT) through the explosion before-event until a player breaks them; the list is persisted in `bhm:lootchests`. `loot.mode: "ground"` drops items instead.
 - `playAnimation` can target a player list; default to all players.
 
 ### World and gameplay rules
 
-- **Peaceful difficulty** despawns hostile-family mobs; choose family / persistence accordingly \[OPEN\].
+- **Peaceful difficulty** \[DECIDED 2026-10-06, D6\]: the framework removes bosses and minions (checked every second) and refuses new spawns; `allowPeaceful: true` opts out.
 - **mobGriefing** gamerule affects block-changing skills; check it.
 - **Difficulty scaling of `applyDamage`** is unknown \[VERIFY by test\].
 - **Ticking areas:** capped (believed 10) \[VERIFY\]; decide behaviour when a fight's chunk unloads.
@@ -520,7 +539,7 @@ Phase, spawn/arena point, cooldown end ticks (stored relative to world tick), va
 
 ### Drops and items
 
-- Simple drops: script-spawned `ItemStack`s (custom name and lore supported) or Bedrock loot tables.
+- Simple drops: rolled from config `drops`, put into the loot chest (D7) or, with `loot.mode: "ground"`, spawned as items.
 - MythicMobs `drops.yml` maps only partly. Custom items with abilities are out of v1.
 
 ## 11. Performance, tooling and testing
@@ -530,7 +549,7 @@ Performance is budgeted per boss per tick, and debug tools are built before feat
 ### Performance rules
 
 - One scheduler loop for the whole framework; no per-skill `runInterval` and no nested `runTimeout` chains.
-- Target CPU budget per boss per tick \[OPEN: set after profiling the MVP\].
+- Target CPU budget per boss per tick \[OPEN, D8: deferred — the owner's machine is too fast to measure a meaningful budget; revisit on weaker hardware\].
 - `system.runJob` (generator functions) for heavy work such as large particle shapes.
 - **Particle culling:** spawn only when a player is within a set range; cap particles per tick per boss. Mobile and console players hit limits first.
 - Summon caps per boss and globally.
@@ -616,6 +635,8 @@ M2 deliberately comes before the full converter: it needs only a minimal bake (l
 
 **Progress (2026-10-05):** M4 delivered so far — reset/leash (`ai.leashRange`, `ai.resetAfterNoPlayers`, `onReset`), `/bhm:perf` profiler (rolling ms/tick) for D8, no boss-vs-boss damage, script-level invulnerability, and the §13 modules: heal, percentDamage, ignite, lightning, lunge, velocity, pull, knockback, teleport, teleportBehind, projectile (scripted particle projectile), particleSphere/particleLine, setProperty, title/actionBar, tempBlocks (air-only, mobGriefing, restored across reloads), setVariable, signal; targeters RandomPlayer, ThreatTable, Cone, Ring; conditions lineOfSight, variable, height, playersNearby; triggers onInteract, onSignal. Still open in M4: shared particle library, weak-point raycast (v1.1). Open in M3: Blockbench timeline markers / hit frames, `q.anim_time`-only Molang.
 
+**Progress (2026-10-06, Archivist feature pass):** decisions D2–D7 and D9 settled (D8 deferred). Skill engine: scoped variables, placeholders, `variableMath`, line `repeat`/`cooldown`, `targetIf`, `castInstead`/`orElseCast`. New modules for the Archivist's skills (rotation, ray traces, entity projectiles with tick/hit/end skills, effect entities with `@Parent`, stun, tint, boss-bar title, random locations). D6 Peaceful removal, D7 health scaling and explosion-proof loot chests. All covered by headless scenarios 20–29; converter mappings for them come with the Archivist conversion.
+
 **Progress (2026-10-06, later):** removed boss packs are cleaned up (L35); config `kind` (boss/minion) with bound minions; menu "Bosses in world" (all bosses, nearest first, teleport). M3 is mostly done (built alongside M2/M4); still missing Blockbench timeline markers / hit frames and `q.anim_time`-only Molang.
 
 **Progress (2026-10-06):** framework renamed **Behemoth** (namespace `bhm:`) and split into a distributable library pack (D1): boss-pack protocol v1 with cache-first registration, connector, demo boss pack, converter output as standalone boss packs (stable UUIDs, compact tracks), `.mcaddon` packaging, and the `/behemoth` chest-UI menu replacing the debug commands. Covered by headless scenarios (protocol, cache restore, abuse cases, menu).
@@ -627,15 +648,15 @@ The first four decisions shape the architecture and must be settled in M0, befor
 ### Decisions
 
 - [x] **D1 Pack layout:** \[DECIDED 2026-10-06\] framework as a separate library; boss packs register plain-data configs over script events (cache-first protocol, §4).
-- [ ] **D2 API version:** which `@minecraft/server` stable version to pin, and the `min_engine_version`. *Provisional (2026-10-03): `@minecraft/server` 2.10.0 (latest stable on npm), `min_engine_version` 1.26.50 \[VERIFY against the owner's game version\].* *Verified 2026-10-06: owner's game is 1.26.52 (≥ 1.26.50); `@minecraft/server-ui` 2.2.0 added for the menu.*
-- [ ] **D3 Execution rules:** confirm or change the defaults in section 7 (concurrency, casting lock, interruption, cancellation).
-- [ ] **D4 Licensing:** check the licence of each purchased MythicMobs / ModelEngine pack. Most allow personal server use but forbid redistribution or porting. Personal conversion ≠ public release.
-- [ ] **D5 Bone tagging:** `bhm_` naming convention in Blockbench, or bone list in config. *Provisional (2026-10-04): no tagging — the converter bakes exactly the bones the MythicMobs YAML references via `@modelpart` (plus `bone_aliases`).*
-- [ ] **D6 Boss family / Peaceful handling.**
-- [ ] **D7 Player-count scaling and drop distribution.**
-- [ ] **D8 CPU budget per boss per tick** (after MVP profiling).
+- [x] **D2 API version:** \[DECIDED 2026-10-06\] `@minecraft/server` 2.10.0, `@minecraft/server-ui` 2.2.0, `min_engine_version` 1.26.50. *History:* which version to pin. *Provisional (2026-10-03): `@minecraft/server` 2.10.0 (latest stable on npm), `min_engine_version` 1.26.50 \[VERIFY against the owner's game version\].* *Verified 2026-10-06: owner's game is 1.26.52 (≥ 1.26.50); `@minecraft/server-ui` 2.2.0 added for the menu.*
+- [x] **D3 Execution rules:** \[DECIDED 2026-10-06\] the section 7 defaults (exclusive cast lock, optional lock until anim end, death cancels all, phase change cancels `interruptible` skills, empty targeter skips the step, delays never block other triggers).
+- [x] **D4 Licensing:** \[DECIDED 2026-10-06\] converted purchased bosses stay private (`private/`, git-ignored); each pack's licence is checked before a converted boss is ever shared.
+- [x] **D5 Bone tagging:** \[DECIDED 2026-10-06\] no tagging, see section 6. *History:* `bhm_` naming convention in Blockbench, or bone list in config. *Provisional (2026-10-04): no tagging — the converter bakes exactly the bones the MythicMobs YAML references via `@modelpart` (plus `bone_aliases`).*
+- [x] **D6 Boss family / Peaceful handling:** \[DECIDED 2026-10-06\] bosses and minions are removed on Peaceful; `allowPeaceful` opts out (section 10).
+- [x] **D7 Player-count scaling and drop distribution:** \[DECIDED 2026-10-06\] health scales with nearby players; loot goes into an explosion-proof chest where the boss died (section 10).
+- [ ] **D8 CPU budget per boss per tick:** deferred (2026-10-06) — the owner's machine is too fast to give a useful number; measure later with the menu's Performance item on weaker hardware.
 - [x] **D10 Framework licence:** \[DECIDED 2026-10-06\] no open-source licence for now: the public repository is all rights reserved (viewable, not licensed for use or redistribution). The owner may open it later.
-- [ ] **D9 Language:** plain JS with JSDoc + `.d.ts`, or TypeScript compiled to JS (earlier notes mention TypeScript). *Provisional (2026-10-03): plain JS + JSDoc + `types/config.d.ts`, type-checked with `tsc --checkJs` (`npm run check`); no build step.*
+- [x] **D9 Language:** \[DECIDED 2026-10-06\] plain JS + JSDoc + `types/config.d.ts`, checked by `tsc`. *History:* plain JS with JSDoc + `.d.ts`, or TypeScript compiled to JS (earlier notes mention TypeScript). *Provisional (2026-10-03): plain JS + JSDoc + `types/config.d.ts`, type-checked with `tsc --checkJs` (`npm run check`); no build step.*
 
 ### To verify against current docs or by test
 

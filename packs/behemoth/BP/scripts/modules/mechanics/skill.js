@@ -17,7 +17,7 @@ export default {
       ctx.boss,
       o.skill,
       { triggerEntity: ctx.trigger, data: ctx.data },
-      { force: !!o.force, inherited: targets }
+      { force: !!o.force, inherited: targets, skillVars: ctx.skillVars, origin: ctx.origin, projectile: ctx.projectile }
     );
   },
 };

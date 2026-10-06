@@ -1,0 +1,23 @@
+{
+  "format_version": "1.10.0",
+  "minecraft:client_entity": {
+    "description": {
+      "identifier": "bhm_demo:bullet",
+      "materials": {
+        "default": "arrow"
+      },
+      "textures": {
+        "default": "textures/entity/arrows"
+      },
+      "geometry": {
+        "default": "geometry.arrow"
+      },
+      "scripts": {
+        "scale": "1.5"
+      },
+      "render_controllers": [
+        "controller.render.default"
+      ]
+    }
+  }
+}

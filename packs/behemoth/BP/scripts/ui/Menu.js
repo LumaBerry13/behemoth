@@ -175,6 +175,10 @@ export class Menu {
           "", "§8Click to spawn at your position",
         ],
         run: (p) => {
+          if (this.s.bosses.isPeaceful() && !cfg.allowPeaceful) {
+            Adapter.message(p, "§c[Behemoth] bosses cannot spawn on Peaceful difficulty");
+            return;
+          }
           const boss = this.s.bosses.spawn(cfg.id, p.dimension, p.location);
           Adapter.message(p, boss ? `§a[Behemoth] spawned ${cfg.display?.name ?? cfg.id}` : `§c[Behemoth] could not spawn ${cfg.id}`);
         },
@@ -261,6 +265,7 @@ export class Menu {
         lore: [
           `§7${boss.dimension.id.replace("minecraft:", "")} §f${Math.round(l.x)} ${Math.round(l.y)} ${Math.round(l.z)}`,
           `§7Health: §f${Math.ceil(h.current)}/${h.max}`, `§7Phase: §f${boss.phase}  §7AI: §f${boss.aiMode}`,
+          ...(cfg.stats?.healthScaling ? [`§7Health scale: §f×${boss.healthScale.toFixed(2)} §7(${boss.scaledFor} player(s))`] : []),
           `§7Target: §f${target ? (target.nameTag || target.typeId) : "none"}`,
           `§7Running: §f${[...boss.runs].map((r) => r.skill.name).join(", ") || "-"}`,
           `§7Minions: §f${boss.boundSummons.size}`,

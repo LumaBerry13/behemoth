@@ -5,6 +5,7 @@ import { BossInstance } from "./BossInstance.js";
 import { Persistence } from "./Persistence.js";
 import { Log } from "./Logger.js";
 import { Random } from "./Random.js";
+import { LootChests } from "./LootChests.js";
 
 /** @typedef {import("@minecraft/server").Entity} Entity */
 /** @typedef {import("./Validator.js").CompiledBoss} CompiledBoss */
@@ -38,6 +39,15 @@ export class BossManager {
      * @type {{ dim: string, x: number, y: number, z: number, type: string, until: number }[]}
      */
     this.tempBlocks = [];
+    /** Boss loot chests, protected from explosions (D7). */
+    this.loot = new LootChests();
+    /** Last difficulty seen, to log the Peaceful sweep once. */
+    this.peaceful = false;
+  }
+
+  /** Peaceful difficulty removes every Behemoth entity unless its config sets allowPeaceful (D6). */
+  isPeaceful() {
+    return Adapter.getDifficulty() === "Peaceful";
   }
 
   /**
@@ -152,6 +162,7 @@ export class BossManager {
     this.services.scheduler.after(1, () => {
       this.started = true;
       this.loadKnown();
+      this.loot.init();
       this.restoreSavedBlocks();
       this.scanLoaded();
     });
@@ -177,12 +188,15 @@ export class BossManager {
       // Bosses never hurt each other (one shared faction) unless ai.friendlyFire.
       if (attacker && boss && attacker !== boss && attacker.config.ai?.friendlyFire !== true) return { cancel: true };
       if (boss?.invulnerable && !boss.dead) return { cancel: true };
+      if (!boss || boss.dead) return;
+      // Health scaling (D7): more players → each hit counts for less. [VERIFY] fractional damage applies in-game.
+      const scale = boss.healthScale > 1 ? boss.healthScale : 1;
       // MythicMobs DamageModifiers on the boss itself.
-      const mod = boss?.config.damageModifiers?.[cause];
-      if (mod === undefined || boss.dead) return;
-      if (mod > 0) return { damage: damage * mod };
+      const mod = boss.config.damageModifiers?.[cause];
+      if (mod === undefined) return scale > 1 ? { damage: damage / scale } : undefined;
+      if (mod > 0) return { damage: (damage * mod) / scale };
       if (mod < 0) {
-        const heal = damage * -mod;
+        const heal = (damage * -mod) / scale;
         Adapter.run(() => Adapter.setHealth(hurt, Adapter.getHealth(hurt).current + heal));
       }
       return { cancel: true };
@@ -235,6 +249,10 @@ export class BossManager {
     if (!entity.isValid || this.instances.has(entity.id)) return this.instances.get(entity.id);
     const compiled = this.configs.get(entity.typeId);
     if (!compiled) return undefined;
+    if (this.isPeaceful() && !compiled.config.allowPeaceful) {
+      Adapter.remove(entity);
+      return undefined;
+    }
     if (Persistence.isDead(entity)) {
       // Reloaded while its death animation was playing: never re-arm, make sure it goes away.
       this.trackTemporary(entity, 40);
@@ -269,6 +287,7 @@ export class BossManager {
     for (const [k, v] of Object.entries(first?.properties ?? {})) Adapter.setProperty(entity, k, v);
     boss.setAiMode(boss.aiMode);
     boss.applyDisplay();
+    boss.updateHealthScale(true);
     this.save(boss);
     Log.debug(`spawned ${entity.typeId} (${entity.id})`);
     this.services.bus.emit("spawn", { boss });
@@ -294,7 +313,12 @@ export class BossManager {
 
   /** @private @param {number} tick */
   tickAll(tick) {
-    if (tick % 100 === 50) this.flushKnown();
+    if (tick % 100 === 50) {
+      this.flushKnown();
+      this.services.vars?.flush();
+    }
+    if (tick % 20 === 5) this.sweepPeaceful();
+    this.loot.sweep(tick);
     if (tick % 10 === 0) {
       this.sweepTemporaries(tick);
       this.sweepBlocks(tick);
@@ -346,15 +370,54 @@ export class BossManager {
     Log.debug(`${boss.config.id} died (${cause})`);
   }
 
-  /** @private @param {BossInstance} boss */
+  /**
+   * Roll the drops and put them in a loot chest where the boss died (D7;
+   * loot.mode "ground" drops them as items instead).
+   * @private @param {BossInstance} boss
+   */
   spawnDrops(boss) {
     const dim = boss.dimension;
     const loc = boss.location;
+    /** @type {{ item: string, amount: number }[]} */
+    const items = [];
     for (const d of boss.config.drops ?? []) {
       if (!Random.chance(d.chance ?? 1)) continue;
       const amount = Array.isArray(d.amount) ? Random.int(d.amount[0], d.amount[1]) : (d.amount ?? 1);
-      if (amount > 0 && !Adapter.spawnItem(dim, d.item, amount, loc)) Log.warn(`drop "${d.item}" failed to spawn`);
+      if (amount > 0) items.push({ item: d.item, amount });
     }
+    if (!items.length) return;
+    if (boss.config.loot?.mode === "ground") {
+      for (const it of items) if (!Adapter.spawnItem(dim, it.item, it.amount, loc)) Log.warn(`drop "${it.item}" failed to spawn`);
+      return;
+    }
+    const placed = this.loot.place(dim, loc, items);
+    if (placed.length) Log.debug(`${boss.config.id}: loot chest at ${placed.map((p) => `${p.x} ${p.y} ${p.z}`).join(", ")}`);
+  }
+
+  /** @private Remove Behemoth entities on Peaceful (D6). */
+  sweepPeaceful() {
+    const peaceful = this.isPeaceful();
+    if (peaceful && !this.peaceful) Log.info("difficulty is Peaceful: bosses and minions are removed");
+    this.peaceful = peaceful;
+    if (!peaceful) return;
+    for (const b of this.all()) if (!b.config.allowPeaceful && !b.dead) this.despawn(b);
+  }
+
+  /**
+   * Remove an entity a skill targets (`remove` mechanic): Behemoth entities are
+   * torn down properly (their own summons go too); players are never removed.
+   * @param {Entity} e
+   */
+  removeEntity(e) {
+    if (!e.isValid || Adapter.isPlayer(e)) return;
+    const inst = this.instances.get(e.id);
+    if (inst) {
+      this.releaseSummons(inst);
+      inst.destroy();
+      this.instances.delete(e.id);
+      this.forget(e.id);
+    }
+    Adapter.remove(e);
   }
 
   /**

@@ -47,12 +47,22 @@ export function parseTargeter(spec) {
 }
 
 const CONDITION_RE = /^(!)?\s*([A-Za-z_][\w]*)\s*(?:(<=|>=|==|!=|<|>)\s*(.+)|\{(.*)\}|\s+(.+))?$/;
+/** MythicMobs condition actions: "cond castInstead other" / "cond orElseCast other". */
+const ACTION_RE = /\s+(castinstead|orelsecast)\s+([\w:.\-]+)\s*$/i;
 
 /**
+ * @typedef {{ kind: "castInstead" | "orElseCast", skill: string }} ConditionAction
  * @param {string} spec
- * @returns {{ name: string, negate: boolean, args: import("../types/config").ConditionArgs } | { error: string }}
+ * @returns {{ name: string, negate: boolean, args: import("../types/config").ConditionArgs, action?: ConditionAction } | { error: string }}
  */
 export function parseCondition(spec) {
+  /** @type {ConditionAction | undefined} */
+  let action;
+  const a = ACTION_RE.exec(spec);
+  if (a) {
+    action = { kind: a[1].toLowerCase() === "castinstead" ? "castInstead" : "orElseCast", skill: a[2] };
+    spec = spec.slice(0, a.index);
+  }
   const m = CONDITION_RE.exec(spec.trim());
   if (!m) return { error: `cannot parse condition "${spec}"` };
   const [, bang, name, op, opValue, braces, spaced] = m;
@@ -61,7 +71,7 @@ export function parseCondition(spec) {
   if (op) args = { op: /** @type {any} */ (op), value: parseValue(opValue) };
   else if (braces !== undefined) args = parseOptions(braces);
   else if (spaced !== undefined) args = { value: parseValue(spaced) };
-  return { name, negate: !!bang, args };
+  return action ? { name, negate: !!bang, args, action } : { name, negate: !!bang, args };
 }
 
 /**
@@ -88,4 +98,37 @@ export function compare(a, op, b) {
     case "==":
     default: return a === b;
   }
+}
+
+// ---------------------------------------------------------------------------
+// <placeholders> (resolved at run time by core/Variables.js)
+// ---------------------------------------------------------------------------
+/** Matches one `<scope.field>` placeholder. */
+export const TOKEN = /<([a-zA-Z_][\w.\-]*)>/g;
+
+/** True if a value is a string containing at least one `<...>` placeholder. @param {unknown} v */
+export function hasPlaceholder(v) {
+  return typeof v === "string" && /<[a-zA-Z_][\w.\-]*>/.test(v);
+}
+
+/**
+ * Turn a resolved placeholder string back into a typed value: "3" → 3,
+ * "true" → true, anything else stays a string.
+ * @param {string} s
+ */
+export function coerce(s) {
+  const t = s.trim();
+  if (t === "true") return true;
+  if (t === "false") return false;
+  if (t !== "" && !Number.isNaN(Number(t))) return Number(t);
+  return s;
+}
+
+/**
+ * Value used to validate an option that contains placeholders: every
+ * placeholder becomes "1", so "-<caster.var.x>" validates as -1.
+ * @param {string} s
+ */
+export function sampleValue(s) {
+  return coerce(s.replace(TOKEN, "1"));
 }

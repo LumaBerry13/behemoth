@@ -35,6 +35,30 @@ let frameworkDamage = false;
 let particleTick = -1;
 let particlesThisTick = 0;
 
+/** Block ids (substrings) projectiles fly through. */
+const PASSABLE = ["grass", "flower", "fern", "vine", "torch", "sapling", "snow_layer", "carpet", "button", "lever", "pressure_plate", "rail", "dead_bush", "web", "sign"];
+/** Blocks a loot chest may replace. */
+const CHEST_REPLACEABLE = ["minecraft:short_grass", "minecraft:tall_grass", "minecraft:fern", "minecraft:large_fern", "minecraft:snow_layer", "minecraft:dead_bush"];
+
+/** @param {Dimension} dim @param {Vector3} p */
+function isFree(dim, p) {
+  const b = dim.getBlock(p);
+  return !!b && (b.isAir || b.isLiquid || CHEST_REPLACEABLE.includes(b.typeId));
+}
+
+/**
+ * Ground spot for a loot chest: climb out of solid blocks (≤ 6), then drop to
+ * the ground (≤ 8). Undefined if nothing fits.
+ * @param {Dimension} dim @param {Vector3} p
+ */
+function chestSpot(dim, p) {
+  const q = { ...p };
+  for (let k = 0; k < 6 && !isFree(dim, q); k++) q.y++;
+  if (!isFree(dim, q)) return undefined;
+  for (let k = 0; k < 8 && isFree(dim, { x: q.x, y: q.y - 1, z: q.z }); k++) q.y--;
+  return q;
+}
+
 export const Adapter = {
   // -------------------------------------------------------------------------
   // System
@@ -128,6 +152,18 @@ export const Adapter = {
     /** Fires before removal while the entity is still readable. @param {(entity: Entity) => void} cb */
     onEntityRemoveBefore(cb) {
       world.beforeEvents.entityRemove.subscribe((e) => cb(e.removedEntity));
+    },
+    /**
+     * Before-event: blocks for which `protect` returns true are taken out of the
+     * explosion (loot chests). Runs in a restricted context: no world writes.
+     * @param {(dimensionId: string, loc: Vector3) => boolean} protect
+     */
+    onExplosionBefore(protect) {
+      world.beforeEvents.explosion.subscribe((e) => {
+        const blocks = e.getImpactedBlocks();
+        const keep = blocks.filter((b) => !protect(e.dimension.id, b.location));
+        if (keep.length !== blocks.length) e.setImpactedBlocks(keep);
+      });
     },
     /** @param {(player: Player, target: Entity) => void} cb */
     onPlayerInteractWithEntity(cb) {
@@ -408,6 +444,98 @@ export const Adapter = {
     }
   },
 
+  /**
+   * First solid block hit along a ray: the hit point, or undefined if none
+   * within `maxDistance` (or unloaded).
+   * @param {Dimension} dim @param {Vector3} from @param {Vector3} dir unit vector @param {number} maxDistance
+   * @returns {Vector3 | undefined}
+   */
+  raycastBlock(dim, from, dir, maxDistance) {
+    try {
+      const hit = dim.getBlockFromRay(from, dir, { maxDistance, includeLiquidBlocks: false, includePassableBlocks: false });
+      if (!hit) return undefined;
+      const b = hit.block.location;
+      return { x: b.x + hit.faceLocation.x, y: b.y + hit.faceLocation.y, z: b.z + hit.faceLocation.z };
+    } catch {
+      return undefined;
+    }
+  },
+
+  /** Solid block at a point (projectiles stop on it; "" = unloaded counts as open). @param {Dimension} dim @param {Vector3} loc */
+  isSolidAt(dim, loc) {
+    try {
+      const b = dim.getBlock(loc);
+      if (!b || b.isAir || b.isLiquid) return false;
+      return !PASSABLE.some((p) => b.typeId.includes(p));
+    } catch {
+      return false;
+    }
+  },
+
+  /**
+   * Place loot chest(s) on the ground at or near `loc` and fill them (D7).
+   * Returns where chests were placed and the items that did not fit.
+   * @param {Dimension} dim @param {Vector3} loc @param {{ item: string, amount: number }[]} items @param {number} [maxChests]
+   * @returns {{ placed: Vector3[], leftover: { item: string, amount: number }[] }}
+   */
+  placeLootChests(dim, loc, items, maxChests = 3) {
+    /** @type {ItemStack[]} */
+    const stacks = [];
+    /** @type {{ item: string, amount: number }[]} */
+    const leftover = [];
+    for (const it of items) {
+      let max;
+      try {
+        max = new ItemStack(it.item, 1).maxAmount;
+      } catch {
+        leftover.push(it); // unknown item id: the caller reports it
+        continue;
+      }
+      for (let n = it.amount; n > 0; n -= max) stacks.push(new ItemStack(it.item, Math.min(n, max)));
+    }
+    /** @type {Vector3[]} */
+    const placed = [];
+    try {
+      let spot = chestSpot(dim, { x: Math.floor(loc.x), y: Math.floor(loc.y), z: Math.floor(loc.z) });
+      while (stacks.length && spot && placed.length < maxChests) {
+        dim.getBlock(spot)?.setType("minecraft:chest");
+        placed.push(spot);
+        const container = dim.getBlock(spot)?.getComponent("minecraft:inventory")?.container;
+        if (!container) break;
+        while (stacks.length) {
+          const rest = container.addItem(stacks[0]);
+          if (!rest) stacks.shift();
+          else {
+            stacks[0] = rest;
+            break;
+          }
+        }
+        const s = spot;
+        spot = undefined;
+        for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const n = { x: s.x + dx, y: s.y, z: s.z + dz };
+          if (isFree(dim, n) && !isFree(dim, { x: n.x, y: n.y - 1, z: n.z })) {
+            spot = n;
+            break;
+          }
+        }
+      }
+    } catch {
+      /* unloaded chunk: everything left over is dropped by the caller */
+    }
+    for (const s of stacks) leftover.push({ item: s.typeId, amount: s.amount });
+    return { placed, leftover };
+  },
+
+  /** Block type id at a block position, or "" if unloaded. @param {string} dimensionId @param {Vector3} loc */
+  blockTypeAt(dimensionId, loc) {
+    try {
+      return world.getDimension(dimensionId).getBlock(loc)?.typeId ?? "";
+    } catch {
+      return "";
+    }
+  },
+
   /** @param {Dimension} dim @param {string} sound @param {Vector3} loc @param {number} [volume] @param {number} [pitch] */
   playSound(dim, sound, loc, volume = 1, pitch = 1) {
     try {
@@ -523,6 +651,19 @@ export const Adapter = {
   /** @param {Entity} e */
   getYaw(e) {
     return e.isValid ? e.getRotation().y : 0;
+  },
+  /** @param {Entity} e @returns {{ x: number, y: number }} pitch (x) and yaw (y) in degrees */
+  getRotation(e) {
+    return e.isValid ? e.getRotation() : { x: 0, y: 0 };
+  },
+  /** @param {Entity} e @param {number} pitch @param {number} yaw */
+  setRotation(e, pitch, yaw) {
+    if (!e.isValid) return;
+    try {
+      e.setRotation({ x: pitch, y: yaw });
+    } catch {
+      /* entity types without rotation */
+    }
   },
   /** @param {Entity} e @param {string} event */
   triggerEvent(e, event) {

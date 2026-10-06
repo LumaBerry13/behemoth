@@ -13,11 +13,12 @@ import { SkillExecutor } from "./core/SkillExecutor.js";
 import { Validator } from "./core/Validator.js";
 import { Settings } from "./core/Settings.js";
 import { Registrar } from "./core/Registrar.js";
+import { Variables } from "./core/Variables.js";
 import { SkillManager, bindModules } from "./registry/SkillManager.js";
 import { startDebugOverlay } from "./debug/overlay.js";
 import { Menu } from "./ui/Menu.js";
 
-export const VERSION = "0.2.0";
+export const VERSION = "0.3.0";
 
 services.adapter = Adapter;
 services.log = Log;
@@ -28,6 +29,7 @@ services.bus = new EventBus();
 services.registry = new SkillManager();
 services.bosses = new BossManager(services);
 services.executor = new SkillExecutor(services);
+services.vars = new Variables(services);
 
 try {
   bindModules(services.registry);
@@ -37,7 +39,10 @@ try {
   services.registrar = new Registrar(services, new Validator(services.registry), VERSION);
   // First-tick order matters: settings (log level), then the boss manager's
   // world scan, then the registrar restores cached boss packs.
-  services.scheduler.after(1, () => services.settings.load());
+  services.scheduler.after(1, () => {
+    services.settings.load();
+    services.vars.load();
+  });
   services.bosses.init();
   services.registrar.start();
   services.executor.wireTriggers();

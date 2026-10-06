@@ -122,6 +122,15 @@ import actionBar from "../modules/mechanics/action_bar.js";
 import tempBlocks from "../modules/mechanics/temp_blocks.js";
 import setVariable from "../modules/mechanics/set_variable.js";
 import signal from "../modules/mechanics/signal.js";
+import variableMath from "../modules/mechanics/variable_math.js";
+import setRotation from "../modules/mechanics/set_rotation.js";
+import matchRotation from "../modules/mechanics/match_rotation.js";
+import rayTraceTo from "../modules/mechanics/ray_trace_to.js";
+import bossBar from "../modules/mechanics/boss_bar.js";
+import removeMechanic from "../modules/mechanics/remove.js";
+import stun from "../modules/mechanics/stun.js";
+import tint from "../modules/mechanics/tint.js";
+import modifyProjectile from "../modules/mechanics/modify_projectile.js";
 
 import self from "../modules/targeters/self.js";
 import target from "../modules/targeters/target.js";
@@ -137,6 +146,9 @@ import randomPlayer from "../modules/targeters/random_player.js";
 import threatTable from "../modules/targeters/threat_table.js";
 import cone from "../modules/targeters/cone.js";
 import ringTargeter from "../modules/targeters/ring.js";
+import origin from "../modules/targeters/origin.js";
+import parent from "../modules/targeters/parent.js";
+import randomLocationsNearCaster from "../modules/targeters/random_locations_near_caster.js";
 
 import healthPct from "../modules/conditions/health_pct.js";
 import distanceCondition from "../modules/conditions/distance.js";
@@ -151,6 +163,12 @@ import lineOfSight from "../modules/conditions/line_of_sight.js";
 import variableCondition from "../modules/conditions/variable.js";
 import height from "../modules/conditions/height.js";
 import playersNearby from "../modules/conditions/players_nearby.js";
+import fieldOfView from "../modules/conditions/field_of_view.js";
+import inCombat from "../modules/conditions/in_combat.js";
+import varEquals from "../modules/conditions/var_equals.js";
+import variableIsSet from "../modules/conditions/variable_is_set.js";
+import directionalVelocity from "../modules/conditions/directional_velocity.js";
+import altitude from "../modules/conditions/altitude.js";
 
 import onSpawn from "../modules/triggers/on_spawn.js";
 import onTimer from "../modules/triggers/on_timer.js";
@@ -213,6 +231,15 @@ export function bindModules(sm) {
   sm.bind("tempBlocks", tempBlocks);
   sm.bind("setVariable", setVariable);
   sm.bind("signal", signal);
+  sm.bind("variableMath", variableMath);
+  sm.bind("setRotation", setRotation);
+  sm.bind("matchRotation", matchRotation);
+  sm.bind("rayTraceTo", rayTraceTo);
+  sm.bind("bossBar", bossBar);
+  sm.bind("remove", removeMechanic);
+  sm.bind("stun", stun);
+  sm.bind("tint", tint);
+  sm.bind("modifyProjectile", modifyProjectile);
 
   sm.bindTargeter("self", self);
   sm.bindTargeter("target", target);
@@ -228,6 +255,10 @@ export function bindModules(sm) {
   sm.bindTargeter("ThreatTable", threatTable);
   sm.bindTargeter("Cone", cone);
   sm.bindTargeter("Ring", ringTargeter);
+  sm.bindTargeter("Origin", origin);
+  sm.bindTargeter("Parent", parent);
+  sm.bindTargeter("RandomLocationsNearCaster", randomLocationsNearCaster);
+  sm.bindTargeter("RLNC", randomLocationsNearCaster);
 
   sm.bindCondition("healthPct", healthPct);
   sm.bindCondition("distance", distanceCondition);
@@ -242,6 +273,12 @@ export function bindModules(sm) {
   sm.bindCondition("variable", variableCondition);
   sm.bindCondition("height", height);
   sm.bindCondition("playersNearby", playersNearby);
+  sm.bindCondition("fieldOfView", fieldOfView);
+  sm.bindCondition("inCombat", inCombat);
+  sm.bindCondition("varEquals", varEquals);
+  sm.bindCondition("variableIsSet", variableIsSet);
+  sm.bindCondition("directionalVelocity", directionalVelocity);
+  sm.bindCondition("altitude", altitude);
 
   sm.bindTrigger("onSpawn", onSpawn);
   sm.bindTrigger("onTimer", onTimer);

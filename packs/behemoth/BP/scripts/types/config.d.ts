@@ -56,11 +56,27 @@ export interface SkillLine {
    * (MythicMobs per-mechanic `delay=` option).
    */
   delay?: number;
+  /** Run this line N more times, `repeatInterval` ticks apart, without pausing (MythicMobs repeat/repeatInterval). */
+  repeat?: number;
+  /** Ticks between repeats (default 1). */
+  repeatInterval?: number;
+  /**
+   * On a child line: the line is skipped while on cooldown (ticks; MythicMobs per-mechanic `cd=`).
+   * On a skill: the skill's cooldown.
+   */
+  cooldown?: number;
 }
 
 export interface SkillDef extends SkillLine {
   tr?: TriggerSpec | TriggerSpec[];
-  cooldown?: number;
+  /**
+   * Target conditions (MythicMobs TargetConditions): tested against each target the
+   * skill is called with (else the boss's current target); failing targets are dropped,
+   * and the skill does not run when none is left.
+   * Conditions in `if` and `targetIf` may end in " castInstead <skill>" (cast that skill
+   * instead when the condition passes) or " orElseCast <skill>" (when it fails).
+   */
+  targetIf?: ConditionSpec[];
   /** Takes the casting lock; blocked while another exclusive skill holds it. */
   exclusive?: boolean;
   /** Cancelled when the boss changes phase. */
@@ -99,7 +115,19 @@ export interface BossConfig {
     damageMultiplier?: number;
     /** Players take the configured damage on Easy/Normal/Hard alike (default false: vanilla difficulty scaling). */
     ignoreDifficulty?: boolean;
+    /**
+     * Scale effective health by player count (D7): health × (1 + perPlayer × (players − 1)),
+     * counting targetable players within `radius` (default ai.targetRange), at most `max` (default 10).
+     * Set on spawn and reset; rises when more players join the fight.
+     */
+    healthScaling?: { perPlayer: number; radius?: number; max?: number };
   };
+  /** Initial caster-scope variables (MythicMobs mob `Variables`). */
+  variables?: Record<string, number | string | boolean>;
+  /** Keep this entity on Peaceful difficulty (default false: removed, D6). */
+  allowPeaceful?: boolean;
+  /** Where drops go (D7): "chest" (default) = a loot chest where the boss died, protected from explosions; "ground" = item entities. */
+  loot?: { mode?: "chest" | "ground" };
   animations?: Record<string, AnimationData>;
   /** Baked bone/point positions in the model's rest pose (converter output), used when no baked animation plays. */
   restPose?: Record<string, [number, number, number]>;
@@ -159,6 +187,24 @@ export interface Location extends Vector3 {
 
 export type Target = Entity | Location;
 
+/** A flying projectile, as seen by modifyProjectile (projectile mechanic). */
+export interface ProjectileHandle {
+  pos: Vector3;
+  vel: Vector3;
+  /** Blocks per tick. Change it with setSpeed (keeps the direction). */
+  speed: number;
+  gravity: number;
+  /** Velocity multiplier per tick. */
+  inertia: number;
+  radius: number;
+  verticalRadius: number;
+  range: number;
+  travelled: number;
+  ticks: number;
+  ended: boolean;
+  setSpeed(v: number): void;
+}
+
 export interface SkillContext {
   boss: import("../core/BossInstance.js").BossInstance;
   caster: Entity;
@@ -168,6 +214,12 @@ export interface SkillContext {
   /** Targets passed down by a parent skill (`skill`/`randomSkill`/`aura`/`hitbox`). */
   inherited: Target[] | undefined;
   vars: Record<string, unknown>;
+  /** Skill-scope variables, shared with the skills this run calls. */
+  skillVars: Record<string, unknown>;
+  /** Where a projectile / ray trace is when it runs this skill (@Origin). */
+  origin?: Location;
+  /** The projectile running this skill (modifyProjectile). */
+  projectile?: ProjectileHandle;
   token: import("../core/Scheduler.js").CancelToken;
   services: import("../core/services.js").Services;
 }
@@ -175,6 +227,8 @@ export interface SkillContext {
 export interface ValidationContext {
   config: BossConfig;
   skillName: string;
+  /** Validate a targeter given as a mechanic option (e.g. projectile `origin`). */
+  checkTargeter(spec: unknown): string[];
 }
 
 export interface Mechanic {
