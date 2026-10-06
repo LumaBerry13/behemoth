@@ -214,6 +214,9 @@ The full design, platform limits and open decisions are in
 
 ## Credits and licensing
 
+- **Behemoth itself is not licensed for use yet.** The code is public to read, but all rights are reserved:
+  no permission is granted to use, copy, modify or redistribute it. This may change in the future.
+
 - The menu uses [Chest-UI](https://github.com/Herobrine643928/Chest-UI) (CC BY 4.0). See
   [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 - Purchased MythicMobs and ModelEngine packs are usually licensed for personal use and must not be redistributed.

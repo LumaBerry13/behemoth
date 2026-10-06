@@ -29,6 +29,8 @@ Persistent context for Claude Code sessions. The **single source of truth** is
 - **D1 [DECIDED 2026-10-06]:** framework is a separate library pack; boss packs register over script events (cache-first protocol, below).
 - **D2:** `@minecraft/server` **2.10.0**, `@minecraft/server-ui` **2.2.0**, `min_engine_version` [1, 26, 50] — owner's game is 1.26.52 (verified from the install).
 - Provisional (owner to confirm): **D5** bake only bones the YAML references via `@modelpart` (+ `bone_aliases`, `blades`); **D9** plain JS + JSDoc + `types/config.d.ts`, no build step.
+- **D10 [DECIDED 2026-10-06]:** no licence, all rights reserved (owner may open it later) — don't add a LICENSE file.
+- Java ModelEngine models are converted to Bedrock **by hand** (owner, Blockbench); the converter reads `.bbmodel` only for timeline markers (M3 remainder).
 - Still open: D3 execution rules, D4 licensing, D6 Peaceful/family, D7 scaling & drops, D8 CPU budget (measure with the menu's Performance item). Don't silently pick an answer — ask, then record [DECIDED].
 
 ## Before writing any code

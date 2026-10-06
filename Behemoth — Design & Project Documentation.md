@@ -53,7 +53,7 @@ The goal is a reusable boss engine: write the framework once, then add a new bos
 ### Inputs per boss
 
 - An entity (BP + RP) with model, texture and all animations, but no animation controller. Spawned as-is, it just stands there.
-- Typically sourced from purchased Java ModelEngine + MythicMobs packs: the `.bbmodel` is imported into Bedrock with Blockbench (Minecraft Entity Wizard plugin) and animations are linked manually.
+- Typically sourced from purchased Java ModelEngine + MythicMobs packs: the `.bbmodel` is imported into Bedrock with Blockbench (Minecraft Entity Wizard plugin) and animations are linked manually. \[DECIDED 2026-10-06: the Java → Bedrock model conversion stays manual (owner, in Blockbench); the converter only reads the `.bbmodel` for timeline markers.\]
 - The MM YAML files (mobs, skills, drops, items) are the behavioural reference used to write the JS config.
 
 ### Outputs per boss
@@ -634,6 +634,7 @@ The first four decisions shape the architecture and must be settled in M0, befor
 - [ ] **D6 Boss family / Peaceful handling.**
 - [ ] **D7 Player-count scaling and drop distribution.**
 - [ ] **D8 CPU budget per boss per tick** (after MVP profiling).
+- [x] **D10 Framework licence:** \[DECIDED 2026-10-06\] no open-source licence for now: the public repository is all rights reserved (viewable, not licensed for use or redistribution). The owner may open it later.
 - [ ] **D9 Language:** plain JS with JSDoc + `.d.ts`, or TypeScript compiled to JS (earlier notes mention TypeScript). *Provisional (2026-10-03): plain JS + JSDoc + `types/config.d.ts`, type-checked with `tsc --checkJs` (`npm run check`); no build step.*
 
 ### To verify against current docs or by test
