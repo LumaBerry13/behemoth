@@ -9,8 +9,11 @@
       }
     },
     "components": {
+      "minecraft:emitter_initialization": {
+        "creation_expression": "variable.count = variable.count ?? 1; variable.lifetime = variable.lifetime ?? 1; variable.size = variable.size ?? 0.08; variable.color_r = variable.color_r ?? 1; variable.color_g = variable.color_g ?? 0.1; variable.color_b = variable.color_b ?? 0.1; variable.color_a = variable.color_a ?? 1;"
+      },
       "minecraft:emitter_rate_instant": {
-        "num_particles": "(variable.count > 0 ? variable.count : 1)"
+        "num_particles": "variable.count"
       },
       "minecraft:emitter_lifetime_once": {
         "active_time": 0.05
@@ -23,16 +26,21 @@
         ]
       },
       "minecraft:particle_lifetime_expression": {
-        "max_lifetime": "(variable.lifetime > 0 ? variable.lifetime : 1.0)"
+        "max_lifetime": "variable.lifetime"
       },
       "minecraft:particle_initial_speed": 0.15,
       "minecraft:particle_motion_dynamic": {
+        "linear_acceleration": [
+          0,
+          0,
+          0
+        ],
         "linear_drag_coefficient": 2
       },
       "minecraft:particle_appearance_billboard": {
         "size": [
-          "(variable.size > 0 ? variable.size : 0.08) * (0.5 + 0.5 * (1 - variable.particle_age / variable.particle_lifetime))",
-          "(variable.size > 0 ? variable.size : 0.08) * (0.5 + 0.5 * (1 - variable.particle_age / variable.particle_lifetime))"
+          "variable.size * (0.5 + 0.5 * (1 - variable.particle_age / variable.particle_lifetime))",
+          "variable.size * (0.5 + 0.5 * (1 - variable.particle_age / variable.particle_lifetime))"
         ],
         "facing_camera_mode": "lookat_xyz",
         "uv": {
@@ -50,10 +58,10 @@
       },
       "minecraft:particle_appearance_tinting": {
         "color": [
-          "(variable.color.a > 0 ? variable.color.r : 1)",
-          "(variable.color.a > 0 ? variable.color.g : 0.1)",
-          "(variable.color.a > 0 ? variable.color.b : 0.1)",
-          "(variable.color.a > 0 ? variable.color.a : 1) * (1 - variable.particle_age / variable.particle_lifetime)"
+          "variable.color_r",
+          "variable.color_g",
+          "variable.color_b",
+          "variable.color_a * (1 - variable.particle_age / variable.particle_lifetime)"
         ]
       }
     }

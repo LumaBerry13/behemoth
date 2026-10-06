@@ -810,14 +810,14 @@ console.log("\n32. particle library: bhm:* particles with colour/size/lifetime v
     const ids = ["dust", "dust_transition", "spark", "smoke", "glow", "flash", "ring", "swirl"];
     const missing = ids.filter((id) => !d.has(out, "particle", `bhm:${id} @`));
     check("every library particle spawned", missing.length === 0, missing.join(","));
-    check("colour and size reach the particle", line(out, "bhm:dust @", "color=#00ffff", "size=0.12"));
-    check("color2 for the transition", line(out, "bhm:dust_transition @", "color2=#0066cc"));
+    check("colour and size reach the particle", line(out, "bhm:dust @", "color_r=0,", "color_g=1,", "color_b=1,", "color_a=1", "size=0.12"));
+    check("color2 for the transition", line(out, "bhm:dust_transition @", "color2_r=0,", "color2_g=0.4,", "color2_b=0.8"));
     check("lifetime ticks → seconds", line(out, "bhm:glow @", "lifetime=1.5"));
     check("amount, width, rise → count, radius, rise", line(out, "bhm:swirl @", "count=40", "radius=1.2", "rise=2.5"));
-    check("particleRing passes the variables too", d.count(out, "particle", "bhm:glow @") >= 24 && line(out, "bhm:glow @", "color=#ff3030"));
+    check("particleRing passes the variables too", d.count(out, "particle", "bhm:glow @") >= 24 && line(out, "bhm:glow @", "color_r=1,", "color_g=0.188"));
     const hp = d.player.health.currentValue;
     out = d.run("demo_telegraph", 5);
-    check("telegraph: flat circle on the ground, radius + duration", line(out, "bhm:telegraph @ (0, 64.05, 5)", "size=3", "lifetime=1.5", "color=#ff3030"));
+    check("telegraph: flat circle on the ground, radius + duration", line(out, "bhm:telegraph @ (0, 64.05, 5)", "size=3", "lifetime=1.5", "color_r=1,", "color_g=0.188"));
     check("…no damage before it ends", d.player.health.currentValue === hp);
     mc.tick(30);
     check("…the hit lands when it ends", d.player.health.currentValue < hp);

@@ -1,21 +1,24 @@
 """Behemoth particle library generator.
 
 Writes the framework's shared particles into the framework resource pack
-(no separate pack): packs/behemoth/RP/particles/bhm_*.json and their white
-textures in packs/behemoth/RP/textures/behemoth/particles/. Textures are white
-so the colour set by the script tints them exactly.
+(no separate pack): packs/behemoth/RP/particles/bhm_*.particle.json and their
+white textures in packs/behemoth/RP/textures/behemoth/particles/. Textures are
+white so the colour set by the script tints them exactly.
 
 Every particle reads optional Molang variables set by the framework
-(modules/shared/particle_vars.js) and falls back to a sensible default when a
-variable is not given:
-    variable.color   RGBA  main colour            (option color  "#RRGGBB[AA]")
-    variable.color2  RGBA  end colour (fades to)  (option color2)
-    variable.size    blocks: particle half-size, or radius for ring/telegraph (option size)
-    variable.lifetime seconds                     (option lifetime, ticks)
-    variable.speed   blocks/second (spark burst, swirl turn speed in deg/s)  (option speed)
-    variable.count   particles per spawn          (option amount)
-    variable.rise    blocks/second upward (swirl, smoke)  (option rise)
-    variable.radius  blocks: swirl radius         (option width)
+(modules/shared/particle_vars.js). The emitter fills in a default for each one
+that was not given (`variable.x = variable.x ?? default;` in its creation
+expression), so the particles also work from /particle and in Snowstorm:
+    variable.color_r/_g/_b/_a   main colour, 0-1      (option color  "#RRGGBB[AA]")
+    variable.color2_r/_g/_b/_a  end colour, 0-1       (option color2; default = color)
+    variable.size     blocks: particle half-size, or radius for ring/telegraph (option size)
+    variable.lifetime seconds                         (option lifetime, ticks)
+    variable.speed    blocks/second (spark), degrees/second (swirl)   (option speed)
+    variable.count    particles per spawn             (option amount)
+    variable.rise     blocks/second upward (swirl, smoke)             (option rise)
+    variable.radius   blocks: swirl radius            (option width)
+Colours are plain numbers, not an RGBA struct: reading a member of a struct
+variable that was never set breaks the expression (particles turned invisible).
 
 Run: python tools/particles.py          (rewrites the files)
      python tools/particles.py --check  (exit 1 if the committed JSON is out of date)
@@ -34,32 +37,40 @@ RP = ROOT / "packs" / "behemoth" / "RP"
 PARTICLE_DIR = RP / "particles"
 TEXTURE_DIR = RP / "textures" / "behemoth" / "particles"
 TEX = "textures/behemoth/particles/"
+SUFFIX = ".particle.json"
 
 FADE = "(1 - variable.particle_age / variable.particle_lifetime)"
 AGE = "(variable.particle_age / variable.particle_lifetime)"
 
+# Defaults collected while a particle's components are built; effect() turns
+# them into the emitter's creation expression.
+_PENDING: dict[str, str] = {}
+
 
 def _d(var: str, default: float) -> str:
-    return f"(variable.{var} > 0 ? variable.{var} : {default})"
+    """A tunable variable with its default."""
+    _PENDING.setdefault(var, _num(default))
+    return f"variable.{var}"
 
 
-def color(default: tuple[float, float, float, float], alpha: str = FADE, var: str = "color") -> list[str]:
-    """Tint from variable.<var> when given (alpha > 0), else the default; alpha × `alpha`."""
-    r, g, b, a = default
-    has = f"variable.{var}.a > 0"
-    return [f"({has} ? variable.{var}.r : {r})", f"({has} ? variable.{var}.g : {g})",
-            f"({has} ? variable.{var}.b : {b})", f"({has} ? variable.{var}.a : {a}) * {alpha}"]
+def _num(v) -> str:
+    return str(v) if isinstance(v, str) else f"{float(v):g}"
+
+
+def color(default: tuple[float, float, float, float], alpha: str = FADE) -> list[str]:
+    """Tint from variable.color_* (default colour when not given); alpha × `alpha`."""
+    for ch, v in zip("rgba", default):
+        _PENDING.setdefault(f"color_{ch}", _num(v))
+    return ["variable.color_r", "variable.color_g", "variable.color_b", f"variable.color_a * {alpha}"]
 
 
 def lerp_color(default: tuple[float, float, float, float]) -> list[str]:
-    """variable.color → variable.color2 over the particle's life."""
-    c1 = color(default, alpha="1")
-    has2 = "variable.color2.a > 0"
-    out = []
-    for i, ch in enumerate("rgba"):
-        end = f"({has2} ? variable.color2.{ch} : {c1[i]})"
-        expr = f"math.lerp({c1[i]}, {end}, {AGE})"
-        out.append(f"{expr} * {FADE}" if ch == "a" else expr)
+    """variable.color_* → variable.color2_* over the particle's life (color2 defaults to color)."""
+    color(default)
+    for ch in "rgba":
+        _PENDING.setdefault(f"color2_{ch}", f"variable.color_{ch}")
+    out = [f"math.lerp(variable.color_{ch}, variable.color2_{ch}, {AGE})" for ch in "rgba"]
+    out[3] = f"{out[3]} * {FADE}"
     return out
 
 
@@ -69,10 +80,12 @@ def billboard(tex_size: int, size: str, facing: str = "lookat_xyz") -> dict:
 
 
 def effect(ident: str, material: str, texture: str, components: dict) -> dict:
+    init = " ".join(f"variable.{k} = variable.{k} ?? {v};" for k, v in _PENDING.items())
+    _PENDING.clear()
     return {"format_version": "1.10.0",
             "particle_effect": {"description": {"identifier": ident,
                                                 "basic_render_parameters": {"material": material, "texture": TEX + texture}},
-                                "components": components}}
+                                "components": {"minecraft:emitter_initialization": {"creation_expression": init}, **components}}}
 
 
 def instant(count_default: float) -> dict:
@@ -91,7 +104,7 @@ PARTICLES: dict[str, dict] = {
         "minecraft:emitter_shape_point": {"direction": random_dir()},
         "minecraft:particle_lifetime_expression": {"max_lifetime": _d("lifetime", 1.0)},
         "minecraft:particle_initial_speed": 0.15,
-        "minecraft:particle_motion_dynamic": {"linear_drag_coefficient": 2},
+        "minecraft:particle_motion_dynamic": {"linear_acceleration": [0, 0, 0], "linear_drag_coefficient": 2},
         "minecraft:particle_appearance_billboard": billboard(16, f"{_d('size', 0.08)} * (0.5 + 0.5 * {FADE})"),
         "minecraft:particle_appearance_tinting": {"color": color((1, 0.1, 0.1, 1))},
     }),
@@ -101,7 +114,7 @@ PARTICLES: dict[str, dict] = {
         "minecraft:emitter_shape_point": {"direction": random_dir()},
         "minecraft:particle_lifetime_expression": {"max_lifetime": _d("lifetime", 1.0)},
         "minecraft:particle_initial_speed": 0.15,
-        "minecraft:particle_motion_dynamic": {"linear_drag_coefficient": 2},
+        "minecraft:particle_motion_dynamic": {"linear_acceleration": [0, 0, 0], "linear_drag_coefficient": 2},
         "minecraft:particle_appearance_billboard": billboard(16, f"{_d('size', 0.08)} * (0.5 + 0.5 * {FADE})"),
         "minecraft:particle_appearance_tinting": {"color": lerp_color((0, 1, 1, 1))},
     }),
@@ -158,7 +171,7 @@ PARTICLES: dict[str, dict] = {
         "minecraft:particle_appearance_billboard": billboard(
             64, f"{_d('size', 3)} * math.min(1, variable.particle_age * 8)", facing="emitter_transform_xz"),
         "minecraft:particle_appearance_tinting": {
-            "color": color((1, 0.2, 0.2, 1), alpha="(0.35 + 0.2 * math.sin(variable.particle_age * 720))")},
+            "color": color((1, 0.2, 0.2, 1), alpha="(0.45 + 0.2 * math.sin(variable.particle_age * 720))")},
     }),
     # Particles spiralling upward around the spawn point (tornado / helix / summoning circles).
     "bhm:swirl": effect("bhm:swirl", "particles_add", "dot", {
@@ -209,8 +222,15 @@ def _textures() -> dict[str, "object"]:
 def write(check: bool = False) -> int:
     PARTICLE_DIR.mkdir(parents=True, exist_ok=True)
     stale = []
+    expected = {f"{ident.replace(':', '_')}{SUFFIX}" for ident in PARTICLES}
+    for old in PARTICLE_DIR.glob("*.json"):
+        if old.name not in expected:
+            if check:
+                stale.append(f"{old.name} (not generated)")
+            else:
+                old.unlink()
     for ident, data in PARTICLES.items():
-        path = PARTICLE_DIR / f"{ident.replace(':', '_')}.json"
+        path = PARTICLE_DIR / f"{ident.replace(':', '_')}{SUFFIX}"
         text = json.dumps(data, indent=2) + "\n"
         if check:
             # Compare without line endings: git may check the files out with CRLF.

@@ -3,7 +3,7 @@
 // an attack will land. Time the attack itself with a line `delay` equal to
 // the duration. Placed on the ground below the target unless onSurface=false.
 // o: { radius?=3, duration?=20, color?="#FF3333", onSurface?=true }
-import { parseColor } from "../shared/particle_vars.js";
+import { parseColor, colorVars } from "../shared/particle_vars.js";
 
 /** @type {import("../../types/config").Mechanic} */
 export default {
@@ -22,7 +22,7 @@ export default {
     const vars = {
       "variable.size": o.radius ?? 3,
       "variable.lifetime": (o.duration ?? 20) / 20,
-      "variable.color": parseColor(o.color ?? "#FF3333") ?? { red: 1, green: 0.2, blue: 0.2, alpha: 1 },
+      ...colorVars("color", parseColor(o.color ?? "#FF3333") ?? { red: 1, green: 0.2, blue: 0.2, alpha: 1 }),
     };
     const locs = targets.map((t) => {
       const l = a.locOf(t);

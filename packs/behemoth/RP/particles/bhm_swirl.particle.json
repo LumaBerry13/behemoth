@@ -1,0 +1,61 @@
+{
+  "format_version": "1.10.0",
+  "particle_effect": {
+    "description": {
+      "identifier": "bhm:swirl",
+      "basic_render_parameters": {
+        "material": "particles_add",
+        "texture": "textures/behemoth/particles/dot"
+      }
+    },
+    "components": {
+      "minecraft:emitter_initialization": {
+        "creation_expression": "variable.count = variable.count ?? 24; variable.lifetime = variable.lifetime ?? 1.2; variable.speed = variable.speed ?? 360; variable.radius = variable.radius ?? 1.5; variable.rise = variable.rise ?? 2; variable.size = variable.size ?? 0.07; variable.color_r = variable.color_r ?? 0.7; variable.color_g = variable.color_g ?? 0.5; variable.color_b = variable.color_b ?? 1; variable.color_a = variable.color_a ?? 1;"
+      },
+      "minecraft:emitter_rate_instant": {
+        "num_particles": "variable.count"
+      },
+      "minecraft:emitter_lifetime_once": {
+        "active_time": 0.05
+      },
+      "minecraft:emitter_shape_point": {},
+      "minecraft:particle_lifetime_expression": {
+        "max_lifetime": "variable.lifetime"
+      },
+      "minecraft:particle_motion_parametric": {
+        "relative_position": [
+          "math.cos(variable.particle_random_1 * 360 + variable.particle_age * variable.speed) * variable.radius",
+          "variable.particle_age * variable.rise",
+          "math.sin(variable.particle_random_1 * 360 + variable.particle_age * variable.speed) * variable.radius"
+        ]
+      },
+      "minecraft:particle_appearance_billboard": {
+        "size": [
+          "variable.size * (1 - variable.particle_age / variable.particle_lifetime)",
+          "variable.size * (1 - variable.particle_age / variable.particle_lifetime)"
+        ],
+        "facing_camera_mode": "lookat_xyz",
+        "uv": {
+          "texture_width": 16,
+          "texture_height": 16,
+          "uv": [
+            0,
+            0
+          ],
+          "uv_size": [
+            16,
+            16
+          ]
+        }
+      },
+      "minecraft:particle_appearance_tinting": {
+        "color": [
+          "variable.color_r",
+          "variable.color_g",
+          "variable.color_b",
+          "variable.color_a * (1 - variable.particle_age / variable.particle_lifetime)"
+        ]
+      }
+    }
+  }
+}
