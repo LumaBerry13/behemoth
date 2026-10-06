@@ -1,0 +1,68 @@
+{
+  "format_version": 2,
+  "header": {
+    "name": "Behemoth Demo Boss",
+    "description": "Example boss pack for the Behemoth framework (needs Behemoth).",
+    "uuid": "fef12fe8-b2c8-4a02-8b43-d16a0656d03e",
+    "version": [
+      0,
+      2,
+      0
+    ],
+    "min_engine_version": [
+      1,
+      26,
+      50
+    ]
+  },
+  "modules": [
+    {
+      "type": "data",
+      "uuid": "778380d6-59c3-4d54-b1ba-0071acf37548",
+      "version": [
+        0,
+        2,
+        0
+      ]
+    },
+    {
+      "type": "script",
+      "language": "javascript",
+      "uuid": "c1715e66-cc9f-41fe-9e28-6ccb849497b2",
+      "entry": "scripts/main.js",
+      "version": [
+        0,
+        2,
+        0
+      ]
+    }
+  ],
+  "dependencies": [
+    {
+      "module_name": "@minecraft/server",
+      "version": "2.10.0"
+    },
+    {
+      "uuid": "1834f02a-087c-4e2c-9656-e7f632801aef",
+      "version": [
+        0,
+        2,
+        0
+      ]
+    },
+    {
+      "uuid": "88366eaf-060d-4dbf-a9dd-10e3ccc1c598",
+      "version": [
+        0,
+        2,
+        0
+      ]
+    }
+  ],
+  "metadata": {
+    "authors": [
+      "TwistyLime"
+    ],
+    "url": "https://github.com/LumaBerry13/behemoth"
+  }
+}

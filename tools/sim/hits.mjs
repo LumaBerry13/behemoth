@@ -3,20 +3,15 @@
 // animation tracks and the real hitbox code (Script API stubbed). The boss faces
 // the player (as it does in game) and the attack is forced.
 //   npm run sim:hits -- <bossTypeId> <skill,skill,...> [--death-event E]
-import { register } from "node:module";
-
-register("./loader.mjs", import.meta.url);
+import { boot } from "./boot.mjs";
 
 const args = process.argv.slice(2);
 const typeId = args[0] ?? "boss:dark_knight";
 const skills = (args[1] ?? "").split(",").filter(Boolean);
 
-const mc = await import("./mc_stub.mjs");
-await import("../../BP/scripts/main.js");
-const { services } = await import("../../BP/scripts/core/services.js");
+const { mc, services } = await boot();
 
 const dim = mc.world.getDimension("overworld");
-mc.tick(2);
 const entity = new mc.Entity(typeId, dim, { x: 0, y: 64, z: 0 }, { health: 1000, height: 3, speed: 0.3 });
 mc.world.afterEvents.entitySpawn.fire({ entity, cause: "Spawned" });
 mc.tick(1);

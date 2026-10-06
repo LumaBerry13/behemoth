@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from mbconv.cli import convert
+from bhmconv.cli import convert
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "kitchen"
@@ -16,16 +16,13 @@ FIXTURE = Path(__file__).resolve().parent / "fixtures" / "kitchen"
 
 @pytest.fixture(scope="module")
 def out(tmp_path_factory):
-    d = tmp_path_factory.mktemp("kitchen_build")
-    # The generated boss imports ../../types/config via JSDoc only; copy the types
-    # so editors resolve them (the validator does not need them).
+    d = tmp_path_factory.mktemp("kitchen_build") / "pack"
     convert(FIXTURE / "kitchen.job.json", d)
-    shutil.copytree(ROOT / "BP" / "scripts" / "types", d / "BP" / "scripts" / "types")
     return d
 
 
 def test_every_line_was_mapped(out):
-    report = (out / "kitchen.report.md").read_text(encoding="utf-8")
+    report = (out.parent / "kitchen.report.md").read_text(encoding="utf-8")
     assert "unsupported" not in report, report
     assert "dropped" not in report, report
 
@@ -34,7 +31,7 @@ def test_generated_config_passes_the_js_validator(out):
     node = shutil.which("node")
     if not node:
         pytest.skip("node not on PATH")
-    cfg = out / "BP" / "scripts" / "bosses" / "private" / "kitchen.js"
+    cfg = out / "BP" / "scripts" / "bosses" / "kitchen.js"
     r = subprocess.run([node, str(ROOT / "tools" / "validate.mjs"), "--config", str(cfg)],
                        capture_output=True, text=True, encoding="utf-8")
     assert r.returncode == 0, r.stdout + r.stderr
@@ -43,7 +40,7 @@ def test_generated_config_passes_the_js_validator(out):
 
 
 def test_mapping_details(out):
-    js = (out / "BP" / "scripts" / "bosses" / "private" / "kitchen.js").read_text(encoding="utf-8")
+    js = (out / "BP" / "scripts" / "bosses" / "kitchen.js").read_text(encoding="utf-8")
     assert 'm: "projectile"' in js and "speed: 0.8" in js          # 16 blocks/s → 0.8 blocks/tick
     assert '"@Ring{radius=5.0;points=4}"' in js
     assert '"@Cone{angle=90.0;r=8.0}"' in js
@@ -53,3 +50,30 @@ def test_mapping_details(out):
     assert '"minecraft:heart_particle"' in js
     behavior = json.loads((out / "BP" / "entities" / "kitchen.json").read_text(encoding="utf-8"))
     assert behavior["minecraft:entity"]["components"]["minecraft:boss"]["name"] == "Kitchen Sink"
+
+
+def test_standalone_pack_layout(out):
+    bp = json.loads((out / "BP" / "manifest.json").read_text(encoding="utf-8"))
+    framework = json.loads((ROOT / "connector" / "framework.json").read_text(encoding="utf-8"))
+    deps = [d.get("uuid") or d.get("module_name") for d in bp["dependencies"]]
+    assert framework["bp_uuid"] in deps and "@minecraft/server" in deps
+    assert bp["header"]["uuid"] == "00000000-0000-4000-8000-000000000001"
+    assert (out / "BP" / "scripts" / "behemoth" / "connector.js").read_text(encoding="utf-8") ==         (ROOT / "connector" / "connector.js").read_text(encoding="utf-8")
+    main = (out / "BP" / "scripts" / "main.js").read_text(encoding="utf-8")
+    assert 'pack: "kitchen_sink"' in main
+    anim = (out / "BP" / "scripts" / "generated" / "kitchen" / "walk.js").read_text(encoding="utf-8")
+    assert "q: 1000" in anim  # compact tracks
+    assert (out / "RP" / "texts" / "en_US.lang").exists() and (out / "RP" / "manifest.json").exists()
+
+
+def test_refuses_to_overwrite_foreign_folder(tmp_path):
+    (tmp_path / "pack").mkdir()
+    (tmp_path / "pack" / "mine.txt").write_text("hands off")
+    with pytest.raises(SystemExit):
+        convert(FIXTURE / "kitchen.job.json", tmp_path / "pack")
+
+
+def test_demo_pack_ships_the_current_connector():
+    demo = ROOT / "packs" / "behemoth_demo" / "BP" / "scripts" / "behemoth" / "connector.js"
+    assert demo.read_text(encoding="utf-8") == (ROOT / "connector" / "connector.js").read_text(encoding="utf-8"), \
+        "copy connector/connector.js into the demo pack"

@@ -1,17 +1,17 @@
-// Offline config check: runs the framework's real Validator over every bound
-// boss config in Node, without the game. Also checks converted (licensed)
-// bosses in private/build when present. Exit code 1 on any error or warning.
-//   npm run validate
+// Offline config check: runs the framework's real Validator over every boss
+// pack's configs in Node, without the game. Exit code 1 on any error or warning.
+//   npm run validate                    all boss packs (packs/*, private/*/pack)
+//   node tools/validate.mjs --config f  just one boss config module (converter tests)
 // Works because modules, registry, validator and configs never import
 // @minecraft/server directly (only the adapter does).
-import { existsSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import { SkillManager, bindModules } from "../BP/scripts/registry/SkillManager.js";
-import { Validator } from "../BP/scripts/core/Validator.js";
-import { bindBosses } from "../BP/scripts/bosses/index.js";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { framework, bossPacks } from "./packs.mjs";
 
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const fw = (p) => import(pathToFileURL(join(framework.bp, "scripts", p)).href);
+const { SkillManager, bindModules } = await fw("registry/SkillManager.js");
+const { Validator } = await fw("core/Validator.js");
+const { decodeConfigTracks } = await fw("core/TrackCodec.js");
 
 let problems = 0;
 const origWarn = console.warn;
@@ -24,32 +24,32 @@ bindModules(registry);
 registry.checkRequires();
 console.log(`[validate] ${registry.summary()}`);
 
+/** @type {{ source: string, config: any }[]} */
 const configs = [];
-const collector = { bind: (c) => configs.push(c) };
-
-// --config <file>: validate just that boss config module (used by converter tests).
 const cfgArg = process.argv.indexOf("--config");
 if (cfgArg >= 0) {
   const mod = await import(pathToFileURL(process.argv[cfgArg + 1]).href);
-  configs.push(mod.default);
+  configs.push({ source: process.argv[cfgArg + 1], config: mod.default });
 } else {
-  bindBosses(collector);
-}
-
-const privateIndex = join(root, "private", "build", "BP", "scripts", "bosses", "private", "index.js");
-if (cfgArg < 0 && existsSync(privateIndex)) {
-  const { bindPrivateBosses } = await import(pathToFileURL(privateIndex).href);
-  bindPrivateBosses(collector);
-  console.log("[validate] including converted bosses from private/build");
+  for (const pack of bossPacks()) {
+    const mod = await import(pathToFileURL(join(pack.bp, "scripts", "bosses", "index.js")).href);
+    for (const config of mod.default) configs.push({ source: pack.name, config });
+  }
 }
 
 const validator = new Validator(registry);
-for (const cfg of configs) {
-  const compiled = validator.compile(cfg);
+const seen = new Map();
+for (const { source, config } of configs) {
+  if (seen.has(config.id)) console.error(`[validate] ${config.id} is provided by both "${seen.get(config.id)}" and "${source}"`);
+  seen.set(config.id, source);
+  // Exactly what the framework receives: JSON round-trip (connector) + track decoding.
+  const wire = JSON.parse(JSON.stringify(config));
+  decodeConfigTracks(wire);
+  const compiled = validator.compile(wire);
   if (!compiled) continue;
   for (const [name, skill] of compiled.skills) {
     const trig = skill.triggers.map((t) => t.name + (t.arg ? `:${t.arg}` : "")).join(",") || "(called)";
-    console.log(`  ${cfg.id} · ${name} [${trig}] steps=${skill.steps.length} cd=${skill.cooldown}`);
+    console.log(`  [${source}] ${config.id} · ${name} [${trig}] steps=${skill.steps.length} cd=${skill.cooldown}`);
   }
 }
 

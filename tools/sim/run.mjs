@@ -10,9 +10,7 @@
 // --chase      crude chase: the boss walks toward the player at its current movement speed
 //              (stopping at body contact, 1 block) while its AI mode is "chase"
 // --death-event E  emulate an entity-JSON custom death: fatal damage fires event E instead of dying
-import { register } from "node:module";
-
-register("./loader.mjs", import.meta.url);
+import { boot } from "./boot.mjs";
 
 const args = process.argv.slice(2);
 const flag = (name, def) => {
@@ -25,16 +23,15 @@ const walk = args.includes("--walk") ? (args.splice(args.indexOf("--walk"), 1), 
 const hit = Number(flag("--hit", 0));
 const deathEvent = flag("--death-event", undefined);
 const distance = Number(flag("--distance", 3));
-const typeId = args[0] ?? "mb:test_boss";
+const typeId = args[0] ?? "bhm_demo:test_boss";
 const ticks = Number(args[1] ?? 400);
 
-const mc = await import("./mc_stub.mjs");
-await import("../../BP/scripts/main.js");
-if (debug) (await import("../../BP/scripts/core/Logger.js")).Log.setLevel("debug");
+const { mc, services, Log } = await boot();
+if (debug) Log.setLevel("debug");
 
 const dim = mc.world.getDimension("overworld");
 const player = new mc.Player("Tester", dim, { x: 0, y: 64, z: distance });
-mc.tick(2); // scheduler start + scan
+mc.tick(1);
 
 const boss = new mc.Entity(typeId, dim, { x: 0, y: 64, z: 0 }, { health: 200, height: 3, speed: 0.3 });
 if (deathEvent) {
@@ -46,7 +43,6 @@ if (deathEvent) {
 }
 mc.world.afterEvents.entitySpawn.fire({ entity: boss, cause: "Spawned" });
 
-const { services } = await import("../../BP/scripts/core/services.js");
 const trace = [];
 for (let t = 0; t < ticks; t++) {
   if (walk) boss.velocity = { x: 0.1, y: 0, z: 0 };

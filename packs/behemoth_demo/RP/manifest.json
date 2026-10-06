@@ -1,0 +1,45 @@
+{
+  "format_version": 2,
+  "header": {
+    "name": "Behemoth Demo Boss Resources",
+    "description": "Example boss pack for the Behemoth framework.",
+    "uuid": "88366eaf-060d-4dbf-a9dd-10e3ccc1c598",
+    "version": [
+      0,
+      2,
+      0
+    ],
+    "min_engine_version": [
+      1,
+      26,
+      50
+    ]
+  },
+  "modules": [
+    {
+      "type": "resources",
+      "uuid": "e3dabba5-8ca5-4eb9-a850-099d1b96e07a",
+      "version": [
+        0,
+        2,
+        0
+      ]
+    }
+  ],
+  "dependencies": [
+    {
+      "uuid": "fef12fe8-b2c8-4a02-8b43-d16a0656d03e",
+      "version": [
+        0,
+        2,
+        0
+      ]
+    }
+  ],
+  "metadata": {
+    "authors": [
+      "TwistyLime"
+    ],
+    "url": "https://github.com/LumaBerry13/behemoth"
+  }
+}

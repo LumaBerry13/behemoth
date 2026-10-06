@@ -7,7 +7,7 @@ runtime entity space: blocks, +Z forward, +X left.
 
 import pytest
 
-from mbconv.bake import Skeleton, bake_animation, rest_position
+from bhmconv.bake import Skeleton, bake_animation, rest_position
 
 GEO = {
     "format_version": "1.12.0",

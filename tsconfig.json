@@ -14,5 +14,6 @@
     "skipLibCheck": true,
     "types": []
   },
-  "include": ["BP/scripts/**/*.js", "BP/scripts/**/*.d.ts"]
+  "include": ["packs/*/BP/scripts/**/*.js", "packs/*/BP/scripts/**/*.d.ts"],
+  "exclude": ["packs/*/BP/scripts/adapter/vendor/**/*.js"]
 }

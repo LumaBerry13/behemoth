@@ -1,0 +1,17 @@
+{
+  "name": "Behemoth",
+  "bp_uuid": "1834f02a-087c-4e2c-9656-e7f632801aef",
+  "rp_uuid": "df245f3d-d8e3-40bb-8ca7-71557163c04c",
+  "version": [
+    0,
+    2,
+    0
+  ],
+  "connector_protocol": 1,
+  "server_module": "2.10.0",
+  "min_engine_version": [
+    1,
+    26,
+    50
+  ]
+}

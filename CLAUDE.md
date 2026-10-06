@@ -1,34 +1,35 @@
-# CLAUDE.md — Mythic Bedrock
+# CLAUDE.md — Behemoth
 
 Persistent context for Claude Code sessions. The **single source of truth** is
-[`Mythic Bedrock — Design & Project Documentation.md`](Mythic%20Bedrock%20—%20Design%20&%20Project%20Documentation.md)
+[`Behemoth — Design & Project Documentation.md`](Behemoth%20—%20Design%20&%20Project%20Documentation.md)
 (referred to below as "the design doc"). This file is a condensed working guide; when they disagree, the design doc wins — and fix this file.
 
 ## What this project is
 
-A JavaScript framework on the Minecraft Bedrock Script API (`@minecraft/server`) that recreates the MythicMobs + ModelEngine boss workflow. One JS config file per boss; mechanics, targeters, conditions and triggers are plug-in modules bound in manager files. Plus an offline **Python converter** that bakes bone tracks / animation data from `.geo.json` + `.animation.json` (+ optional `.bbmodel`).
+**Behemoth** (renamed from its working title on 2026-10-06) is a boss framework for Minecraft Bedrock on the Script API. It is shipped as a **separate library pack** (decision D1): users install the framework once; each **boss pack** contains only its boss config(s), entity/model/animations and the standard **connector**, and registers its bosses with the framework over script events. Plus an offline **Python converter** (`bhmconv`) that turns MythicMobs + ModelEngine bosses (YAML + Bedrock model/animations) into standalone Behemoth boss packs.
 
-**Status (2026-10-05):** M1 + M2 done: Dark Knight (`boss:dark_knight`, MythicMobs mob `bl_dark_knight`) converted and tested in-game by the owner, including `/reload`. M4 in progress: reset/leash, profiler and all §13 v1 modules are in; next is the shared particle library and the second real boss (whose YAML decides further modules). The MM stones entity (`bl_dark_knight_stones`) is intentionally NOT converted — the boss summons a `minecraft:pig` stand-in (job file `mob_types`).
+**Status (2026-10-06):** M1 + M2 done (Dark Knight converted and tested in-game, incl. reload). M4 in progress: reset/leash, profiler, all §13 v1 modules, the library split + cache-first registration protocol, and the `/behemoth` chest-UI menu are in. Next: in-game test of the library split + menu, the shared particle library, then the next real boss (`private/TheArchivist/` is a raw Java ModelEngine/MythicMobs pack — needs a Bedrock model first, or converter support for Java ModelEngine models; ask the owner). The Dark Knight's stones entity is intentionally NOT converted (summons a `minecraft:pig`, job `mob_types`).
 
 ## Dev commands
 
-- `npm run check` — type-check all scripts against the pinned `@minecraft/server` typings (`tsc --checkJs`). Catches invented/misspelled API names. Run after every script change.
-- `npm run validate` — run the real Validator over every bound boss config in Node (no game needed). Run after every config/module change.
-- `npm run deploy` — copy `BP/` and `RP/` into `%APPDATA%\Minecraft Bedrock\Users\Shared\games\com.mojang\development_*_packs` (override with `MB_COM_MOJANG`), then overlays `private/build/{BP,RP}` (converted bosses; `.lang` files appended to en_US.lang).
-- `npm run convert -- --job private/<boss>.job.json` — run the converter (writes `private/build/` plus `<boss>.report.md`). `npm run test:converter` — pytest.
-- `npm run sim -- <typeId> [ticks] [--hit N] [--distance D] [--walk] [--debug] [--death-event E]` — headless run of the real framework against a `@minecraft/server` stub (`tools/sim/`). Use it to catch runtime errors / broken skill flows before asking the owner to test. No physics or pathing.
-- `npm run sim:hits -- <typeId> <skill,skill>` — swings each attack at players placed around the boss (front/sides/behind × 1.5–4.5 blocks) using the real baked tracks, and checks vanilla-melee cancel + walk speed. Run after any change to hitboxes, bones or the converter's bake.
-- `npm run sim:scenarios -- [typeId]` — regression scenarios: no friendly fire, custom-death backstop, reload mid-death, reset, leash, script invulnerability, and (test boss) every `demo_*` module skill. Run for both bosses after any core change.
-- `npm run test:converter` includes an end-to-end test: the made-up kitchen-sink boss in `converter/tests/fixtures/kitchen/` is converted and checked with `node tools/validate.mjs --config <file>`. Extend its YAML when adding a MythicMobs mapping.
-- validate / sim / deploy include `private/build` bosses automatically when present.
-- The typings at `node_modules/@minecraft/server/index.d.ts` are the reference for API names — grep them instead of guessing.
+- `npm test` — check + validate + converter tests + scenarios for both bosses. Run before every commit.
+- `npm run check` — `tsc --checkJs` over `packs/*/BP/scripts` against the pinned typings (`@minecraft/server` 2.10.0, `@minecraft/server-ui` 2.2.0). Catches invented/misspelled API names. Vendored Chest-UI JS is excluded (its `forms.d.ts` is used).
+- `npm run validate` — the real Validator over every boss pack's `scripts/bosses/index.js` (packs/* and private/*/pack), after the same JSON round-trip + track decoding the framework does. `--config <file>` validates one config module.
+- `npm run sim:scenarios -- [typeId]` — headless regression: combat rules (friendly fire, custom death backstop, reload mid-death, reset, leash, script invulnerability), every `demo_*` module skill (demo boss), the **registration protocol** (cache restore after reload with nothing re-sent, changed payload re-requested, player `/scriptevent` ignored, protocol/version refusal, type takeover refused, corrupt payload re-requested, stalled transfer expiry) and the **menu** (54-slot form, glass border, toggle persists).
+- `npm run sim:hits -- <typeId> <skill,skill>` — hit map of attacks around the boss with the real baked tracks + vanilla-melee cancel + walk speed.
+- `npm run sim -- <typeId> [ticks] [--hit N] [--distance D] [--walk] [--chase] [--debug] [--death-event E]` — headless fight.
+- The simulator (`tools/sim/boot.mjs`) loads the framework AND every boss pack's `main.js`; they talk over a stubbed `sendScriptEvent` (next-tick delivery, `BHM_SIM_MSG_LIMIT` chars max, default 2048 — so chunking is exercised). `@minecraft/server-ui` is stubbed (`ui_stub.mjs`: records forms, `clicks` queue).
+- `npm run convert -- --job private/<Boss>/<boss>.job.json` — builds `private/<Boss>/pack/{BP,RP}` (standalone boss pack) + `private/<Boss>/<boss>.report.md`. `npm run test:converter` — pytest incl. the kitchen-sink end-to-end test (`converter/tests/fixtures/kitchen/`; extend its YAML when adding a mapping).
+- `npm run deploy` — framework → `Behemoth_BP/RP`, each boss pack → `<PackName>_BP/RP` in the game's development folders (`BHM_COM_MOJANG` to override); removes legacy `MythicBedrock_*` folders.
+- `npm run package` — `.mcaddon` files: `dist/` (framework + public packs), `private/<Boss>/dist/` (licensed).
+- Typings: `node_modules/@minecraft/server/index.d.ts` and `.../server-ui/index.d.ts` — grep them instead of guessing.
 
-## Provisional decisions in use (owner to confirm; see design doc §15)
+## Decisions in use (design doc §15)
 
-- D1: everything script-side in the one framework BP.
-- D2: `@minecraft/server` **2.10.0**, `min_engine_version` [1, 26, 50] [VERIFY vs owner's game version].
-- D9: plain JS + JSDoc + `types/config.d.ts`, checked by `tsc`, no build step.
-- D5: no bone tagging — the converter bakes the bones the YAML references via `@modelpart` (+ job `bone_aliases`).
+- **D1 [DECIDED 2026-10-06]:** framework is a separate library pack; boss packs register over script events (cache-first protocol, below).
+- **D2:** `@minecraft/server` **2.10.0**, `@minecraft/server-ui` **2.2.0**, `min_engine_version` [1, 26, 50] — owner's game is 1.26.52 (verified from the install).
+- Provisional (owner to confirm): **D5** bake only bones the YAML references via `@modelpart` (+ `bone_aliases`, `blades`); **D9** plain JS + JSDoc + `types/config.d.ts`, no build step.
+- Still open: D3 execution rules, D4 licensing, D6 Peaceful/family, D7 scaling & drops, D8 CPU budget (measure with the menu's Performance item). Don't silently pick an answer — ask, then record [DECIDED].
 
 ## Before writing any code
 
@@ -38,137 +39,117 @@ A JavaScript framework on the Minecraft Bedrock Script API (`@minecraft/server`)
 
 ## Hard rules (design doc §17)
 
-- **Never invent Script API names.** Anything not confirmed in the pinned `@minecraft/server` typings gets a `// [VERIFY]` comment and is called out in the reply so the owner can check via IDE autocomplete.
+- **Never invent Script API names.** Anything not confirmed in the pinned typings gets a `// [VERIFY]` comment and is called out in the reply.
 - **Stable APIs only.** No beta/experimental modules.
-- **Only the adapter layer (`scripts/adapter/`) imports `@minecraft/server`.** Modules and core use the adapter.
+- **Only the adapter layer (`scripts/adapter/`, incl. `adapter/Ui.js` and `adapter/vendor/`) imports `@minecraft/*`** in the framework. (Boss-pack connectors import `@minecraft/server` themselves — they are separate packs.)
 - **Mechanics and conditions are stateless** singletons; state lives in `BossInstance` or the execution `ctx`.
-- **Every scheduled task carries the boss instance's cancel token.** One central scheduler loop (`system.runInterval`, 1 tick) — no per-skill `runInterval`, no nested `runTimeout` chains. Heavy work → `system.runJob`.
+- **Every scheduled task carries the boss instance's cancel token.** One central scheduler loop — no per-skill `runInterval`, no nested `runTimeout` chains. Heavy work → `system.runJob`.
 - Check `entity.isValid` before every step that touches an entity. Defer world writes inside before-events with `system.run`.
 - **All time values are ticks.** Name ambiguous fields `...Ticks`.
-- No dynamic imports: every config/module is a static import + bind line in its manager file.
-- Configs: `schemaVersion` required; inline functions only as custom conditions; stay close to MythicMobs naming.
+- No dynamic imports. Framework modules = static import + bind line in `registry/SkillManager.js`. Boss packs list configs in `scripts/bosses/index.js` (`export default [ ... ]`).
+- Boss configs are **plain JSON data** (they cross packs): no functions. `schemaVersion` required.
 - Deliver complete, runnable files — no partial snippets, no leftover debug output.
-- New platform limit found → add a row to design doc §3 (L-number, workaround, status).
-- Decision made → move it from §15 into the relevant section marked **[DECIDED]**; update the doc's as-of date. Keep section order; add material to the matching section, never append at the end.
+- New platform limit → row in design doc §3. Decision → [DECIDED] in the matching section, as-of date updated.
+- **Never change the framework's manifest UUIDs** (`packs/behemoth/*/manifest.json`, mirrored in `connector/framework.json`): every boss pack depends on them. Bump versions instead; bump the protocol (`PROTOCOL` in Registrar + connector) only for breaking wire changes.
+- `connector/connector.js` is canonical; the demo pack and converter output must carry an identical copy (tested).
 
 ## Architecture (design doc §4)
 
-Five layers, each talks only to the one below:
+Five layers inside the framework, each talks only to the one below:
 
-1. Configs + generated data (`bosses/`, `generated/`)
-2. Modules (`modules/mechanics|targeters|conditions|triggers/`, one file each)
-3. Registries/managers (`BossManager`, `SkillManager` — `bind("name", Module)`, `bindCondition(...)` etc.)
-4. Core runtime (`BossInstance`, `Scheduler`, `EventBus`, `ThreatTable`, `Persistence`, `Validator`, `SkillExecutor`)
-5. Adapter (sole caller of `@minecraft/server`)
+1. Configs + generated data (live in **boss packs**, received by the Registrar)
+2. Modules (`modules/mechanics|targeters|conditions|triggers/`, one file each; `modules/shared/` helpers)
+3. Registries/managers (`SkillManager` bind lists; `BossManager.register(compiled)` binds a boss type at runtime and takes over loaded entities of that type)
+4. Core runtime (`BossInstance`, `Scheduler`, `EventBus`, `ThreatTable`, `Persistence`, `Validator`, `SkillExecutor`, `Registrar`, `Settings`, `TrackCodec`)
+5. Adapter (sole caller of `@minecraft/server` / `-ui`)
 
-Module contracts (proposed, finalise in M1, type in `types/config.d.ts`):
+Module contracts (typed in `types/config.d.ts`):
 
 | Kind | Shape |
 | --- | --- |
-| Mechanic | `{ name, requires?, validate(options) → errors[], execute(ctx, targets, options) → void \| delayTicks }` |
+| Mechanic | `{ name, requires?, defaultTargeter?, validate(options, vctx) → errors[], execute(ctx, targets, options) → void \| delayTicks }` |
 | Targeter | `{ name, validate(options), resolve(ctx, options) → (Entity \| Location)[] }` |
 | Condition | `{ name, validate(args), test(ctx, target, args) → boolean }` (executor handles negation) |
-| Trigger | `{ name, subscribe(bus) }` → emits `{ boss, triggerEntity, data }` |
+| Trigger | `{ name, subscribe(bus, fire), match?(arg, event), validateArg?(arg) }` |
 
-`ctx` = boss instance, caster, trigger entity, targets, variables, cancel token, adapter.
+### Boss-pack protocol v1 (core/Registrar.js ⇄ connector/connector.js)
 
-Skill line keys: `m` mechanic, `o` options, `t` targeter, `tr` trigger(s), `if` conditions (ANDed), `chance`, `c` children; plus `cooldown`, GCD, `exclusive`, `interruptible`. Parsed and validated once at startup.
+- framework → packs: `bhm:ready {p, fw}`, `bhm:need {p, pack, hash}`, `bhm:ack {p, pack, hash, ok, bosses, errors}`.
+- pack → framework: `bhm:hello {p, pack, ver, hash, size, min}`, `bhm:part "<pack>|<hash>|<i>|<n>|<data>"` (raw).
+- **Cache-first:** accepted payloads are stored in world dynamic properties (`bhm:cache` index + `bhm:cache:<pack>:<i>` parts ≤ 30000 chars). In its first tick after a load/reload the framework restores every cached pack, then sends `bhm:ready`; packs say hello; matching hash → ack only (nothing re-sent). New/changed hash → one `bhm:need` (deduped) → parts (connector starts at 8000 chars and halves on refusal) → FNV-1a checksum → JSON → track decode → validate → bind → cache → ack.
+- Guards: script-sent events only (events with a source entity/block are ignored), protocol + `minFramework` checks, a type owned by one pack can't be taken by another, transfers time out after 200 ticks, packs not seen for 1200 ticks lose their cache entry (bosses stay loaded until reload), duplicates ignored.
+- Payload size: Dark Knight 26 KB (compact tracks), demo 5 KB. Real engine message limit / delivery delay: measure with `/behemoth` → Diagnostics → probe ([VERIFY]; sim assumes 2048 chars, next tick).
 
-A module declares `requires: [...]`; missing deps disable that skill with a warning, the rest of the boss still runs.
+### Menu (`/behemoth`)
+
+- One custom command `bhm:behemoth` (operators, works without cheats) opens `ui/Menu.js` (chest UI via vendored Chest-UI, `adapter/Ui.js`, retries while the player is busy).
+- 54 slots, checkerboard border of gray/black glass (texture paths, never item ids), content in the 7×4 interior, controls on the bottom row (45 back, 48 prev, 49 close, 50 next).
+- Pages: Main (settings: overlay, log level, bone markers, hitbox preview, seeded RNG, icon set, performance), Bosses (spawn), Nearest boss (info, reset, despawn, phase ±, skills → cast), Boss packs, Diagnostics (script-event probe, clear cache, modules), About (credits).
+- Settings persist in world property `bhm:settings` (`core/Settings.js`), applied on load (log level, RNG seed). Icons: `ui/icons.js` (vanilla fallbacks verified against the 1.26 texture index; custom set = `RP/textures/behemoth/ui/<key>.png`, list in `docs/menu-icons.md`).
+- Chest-UI is CC BY 4.0: keep `THIRD_PARTY_NOTICES.md` and the vendored LICENSE/README.
 
 ## Layout
 
 ```
-BP/  manifest.json, entities/, scripts/{main.js, adapter/, core/, registry/, modules/, bosses/, generated/, types/, debug/}
-RP/  entity/, animations/, texts/ (later: particles/ shared library, render_controllers/, models/, textures/)
-tools/  validate.mjs, deploy.mjs, sim/ (Node)
-converter/  Python converter: convert.py (entry), mbconv/{keyframes,bake,mythic,entity,jsout,cli}.py, tests/
-private/  (git-ignored) licensed sources + <boss>.job.json; private/build/ = converter output overlay
+packs/behemoth/BP        framework: manifest, scripts/{main.js, adapter/{Adapter,Ui}.js + vendor/chest_ui, core/, registry/, modules/, ui/, debug/, types/}
+packs/behemoth/RP        framework resources: ui/ (Chest-UI), textures/ui/, later particles/ + textures/behemoth/ui/
+packs/behemoth_demo/     public demo boss pack (bhm_demo:test_boss, vanilla zombie model, demo_* skill per module)
+connector/               connector.js (canonical) + framework.json (UUIDs/versions boss packs depend on)
+converter/               bhmconv: convert.py, bhmconv/{keyframes,bake,mythic,entity,jsout,cli}.py, tests/ (+ fixtures/kitchen)
+tools/                   packs.mjs, deploy.mjs, validate.mjs, package.py, sim/{boot,loader,mc_stub,ui_stub,run,hits,scenarios}
+docs/                    menu-icons.md
+private/<Boss>/          (git-ignored) licensed sources + <boss>.job.json; pack/ = generated boss pack; dist/ = .mcaddon
 ```
 
-Key runtime files:
-- `scripts/main.js` — builds the `services` container, binds modules + bosses, validates, starts the scheduler, registers debug commands.
-- `scripts/adapter/Adapter.js` — the only `@minecraft/server` import.
-- `scripts/registry/SkillManager.js` — registries **and** the module binding list (`bindModules`). Add a module = new file + import + bind line.
-- `scripts/bosses/index.js` — boss binding list (`bindBosses`). Add a boss = config file + import + bind line.
-- `scripts/core/` — `BossManager` (events → bus, instances, persistence, drops), `BossInstance` (phase, cooldowns, lock, anim, bone lookup), `SkillExecutor` (runs compiled skills, delays via scheduler), `Validator` (compiles configs at startup), `SkillParser`, `Scheduler` (+`CancelToken`), `EventBus`, `ThreatTable`, `Persistence`, `Random` (seedable), `Logger`, `vec.js`.
-- Modules get everything through `ctx.services` (adapter, scheduler, bus, bosses, executor, random, log). They may import the pure helpers `core/vec.js` and `core/SkillParser.js` (`compare`) and `modules/shared/*` (e.g. `deal_damage.js` — always use it for damage so damageMultiplier/ignoreDifficulty/debug logging apply), nothing else from core.
-- The test boss has trigger-less `demo_*` skills showcasing every module; run them in-game with `/mb:skill demo_<name>`.
-- `generated/test_boss/*.js` are hand-written stand-ins in converter output format.
-- `bosses/private/index.js` is a committed EMPTY stub; the real one (plus converted boss configs and generated data) exists only in `private/build/` and the deployed game folder. Never commit anything from `private/`.
-
-Execution semantics implemented:
+Execution semantics:
 - Skill = trigger → skill `if`/`chance`/cooldown → steps in order. A mechanic returning N > 0 pauses the run N ticks.
-- A line with `delay: N` fires N ticks later WITHOUT pausing the sequence (MythicMobs per-mechanic `delay=`).
-- Lines without `t` use targets inherited from the calling skill (`skill`/`randomSkill`/`aura`/`hitbox`), else the mechanic's default targeter. An explicit targeter that finds nothing skips the line (MythicMobs behaviour).
-- `skill`/`randomSkill` respect the called skill's cooldown and conditions; phase `onEnter`, `aura` ticks, `hitbox` hits and debug `/mb:skill` force.
-- `exclusive` skills take the cast lock and respect `config.gcd`. The `gcd` mechanic + `offGcd` condition give MythicMobs-style GCD.
-- `state{lock:true}` holds the lock until anim end; `interruptible` runs are cancelled on phase change.
+- A line with `delay: N` fires N ticks later WITHOUT pausing the sequence.
+- Lines without `t` use targets inherited from the calling skill (`skill`/`randomSkill`/`aura`/`hitbox`/`projectile`), else the mechanic's default targeter. An explicit targeter that finds nothing skips the line.
+- `skill`/`randomSkill` respect the called skill's cooldown and conditions; phase `onEnter`, `aura` ticks, `hitbox`/`projectile` hits and menu skill casts force.
+- `exclusive` skills take the cast lock and respect `config.gcd`; `gcd` mechanic + `offGcd` condition give MythicMobs-style GCD.
 - Death cancels everything, then `onDeath` skills run for up to 100 ticks.
 
-Other runtime features: `damageModifiers` (MythicMobs DamageModifiers via the stable `entityHurt` before-event; negative heals), `death.event` (custom entity-JSON death, L25), `baseStates` + `mb:idle_state`/`mb:walk_state` (generated RP base controller), `restPose` (bone fallback while idle/walk play client-side), facing lock, speed multiplier (both persisted), timed summons (`summon{lifetime}`).
+Other runtime features: `damageModifiers`, `death.event` + `removeAfter` backstop, `baseStates` (`bhm:idle_state`/`bhm:walk_state`), `restPose`, facing lock, persisted speed multiplier, timed summons, reset/leash (`onReset`), script-level invulnerability, no boss-vs-boss damage (`ai.friendlyFire` opt-in), `tempBlocks` (air only, mobGriefing, restored across reloads), compact baked tracks (`TrackCodec`: `{q, n, d: base64 int16}`).
 
-MythicMobs → Mythic Bedrock translation rules (converter `mythic.py`):
+MythicMobs → Behemoth translation rules (converter `mythic.py`):
 - Metaskill `Cooldown` is SECONDS (×20). Delays, timers and `gcd` are ticks.
-- `TargetConditions distance` and `targetwithin` both map to our caster→target `distance`.
-- `@modelpart{o=model}` offsets are in the model's yaw frame; ModelEngine −Z forward → entity space +Z forward (x and z negated).
-- Job `blades: [bone]`: that bone's farthest cube corner is baked as `<bone>_tip`; totems on it become a hilt→tip capsule (`hitbox{to}`) and other mechanics (e.g. summons) target the tip; YAML offsets on blades are dropped (L28).
-- `totem` → `hitbox` (`ti` read as the per-target re-hit interval [VERIFY]); `throw` velocities ÷10 [VERIFY]; `potion level` = amplifier; `lockmodel` → `lockFacing`; `defaultstate` → `baseState`.
-- `model`, `BodyClamp`, `CancelEvent` are skipped. Metaskills not reachable from the mob's skill lines (e.g. another mob's) are not converted.
-- Unsupported items are dropped and listed in `private/build/<boss>.report.md` — read it after every conversion.
-- Job `tuning` = Bedrock-side adjustments NOT in the YAML (all reported): `stop_distance`, `damage_multiplier`, `randomskill_mode` (`available` = only pick skills that can fire now), `trigger_overrides` (`{metaskill: "onTimer:10"}` for the mob lines calling it), `extra_lines` (`{metaskill: [lines]}` prepended; time them with `delay`), `extra_lines_enabled` (false = keep them in the job but do not apply). The Dark Knight's camera shakes are defined there and currently DISABLED at the owner's request (2026-10-05). Put boss feel tweaks here, never in generated files.
+- `TargetConditions distance` and `targetwithin` map to caster→target `distance`.
+- `@modelpart{o=model}` offsets are in the model yaw frame; ModelEngine −Z forward → entity space +Z forward.
+- Job `blades: [bone]` → `<bone>_tip` baked; totems become hilt→tip capsules (`hitbox{to}`), summons land at the tip; YAML offsets on blades dropped.
+- `totem` → `hitbox` (`ti` = re-hit interval [VERIFY]); `throw`/`pull` velocities ÷10 [VERIFY]; projectile `v` blocks/second → /20 per tick [VERIFY]; `potion level` = amplifier; Java particle names via `MM_PARTICLES` (+ job `particles`).
+- `model`, `BodyClamp`, `CancelEvent` skipped; unreachable metaskills not converted. Everything dropped/approximated is in `<boss>.report.md` — read it after every conversion.
+- Job `pack` = name/id/version + UUIDs (generated once, written back to the job — never regenerate them). Job `tuning` = Bedrock-side tweaks (stop_distance, damage_multiplier, ignore_difficulty, randomskill_mode, trigger_overrides, extra_lines + extra_lines_enabled, leash_range, reset_after_no_players). Dark Knight camera shakes are defined but DISABLED (owner, 2026-10-05).
 
-Debug commands (cheats on): `/mb:spawn <boss>`, `/mb:skill <name>`, `/mb:phase <id>`, `/mb:despawn`, `/mb:reset`, `/mb:perf`, `/mb:debug [on]`, `/mb:bones [on]`, `/mb:seed [n]`.
-
-Boss safety rules (learned in testing): bosses never damage each other (`ai.friendlyFire` opt-in); invulnerability is script-level — NEVER toggle stub component groups that define components the owner's entity also has (L31); custom-death bodies are removed by a backstop (`death.removeAfter`); `ai.leashRange` / `ai.resetAfterNoPlayers` reset a boss (heal, phase 1, clear threat/cooldowns, back to spawn, `onReset`); `tempBlocks` only replace air, respect mobGriefing and are persisted in the world property `mb:tempblocks` so reloads restore them.
-
-## Mythic-ready entity stub (design doc §5)
+## Behemoth-ready entity stub (design doc §5)
 
 Every boss entity JSON must contain:
-- Component groups + events: `mb:idle`/`mb:set_idle`, `mb:chase`/`mb:set_chase`, `mb:frozen`/`mb:set_frozen`, `mb:invulnerable`/`mb:invuln_on`+`mb:invuln_off`, `mb:despawn`/`mb:despawn`.
-- Properties: `mb:phase` (int), `mb:visibility`, `mb:anim_speed` (float), optional `mb:state` (enum). Keep the set small.
-- `minecraft:boss`, health/collision/knockback resistance/scale per config, `minecraft:persistent`.
-- Base `minecraft:damage_sensor` with fall immunity (leaps). The `mb:invulnerable` group's sensor replaces it while active.
-- Facing is framework-owned: `BossInstance.faceTarget()` calls `lookAt` on the target every tick (`ai.faceTarget: false` to opt out).
-- Optional ints `mb:idle_state` / `mb:walk_state` when the boss uses `baseStates` (the converter adds them).
-- RP: render controller reading `mb:` props; `anim_time_update` using speed property. Converted bosses get `controller.animation.<boss>.mb_base` first in `scripts.animate`.
-- Chase AI = `nearest_attackable_target` + `hurt_by_target` + `melee_attack` (pathfinding) + `minecraft:attack`; the vanilla melee damage is cancelled by the framework unless `ai.vanillaMelee: true` (L27). Never use `move_towards_target` (its `within_radius` keeps the mob AWAY).
-- `minecraft:boss.name` must be set (else the bar shows "Unknown"); the converter uses the MythicMobs Display name.
-- Speed: `setSpeed` multiplies `config.stats.movementSpeed` (converter copies the entity's `minecraft:movement` value). `ai.stopDistance` makes the boss hold position near its target (no pushing into players); multipliers > 1 (lunges) are exempt.
-- Bedrock scales mob damage to players by difficulty (Easy: x/2+1, measured). `stats.ignoreDifficulty` (job tuning `ignore_difficulty`) undoes it. `stats.damageMultiplier` scales every `damage` mechanic. With `/mb:debug on`, each hit logs `damage N → player: hp a → b`.
-- The converter's behavior patch also removes `minecraft:despawn` and `minecraft:equipment`, raises format_version to 1.21.0 and turns boolean `deals_damage` into "yes"/"no". The owner's own groups/events (e.g. the death sequence) are kept.
+- Component groups + events: `bhm:idle`/`bhm:set_idle`, `bhm:chase`/`bhm:set_chase`, `bhm:frozen`/`bhm:set_frozen`, `bhm:invulnerable`/`bhm:invuln_on`+`bhm:invuln_off` (kept for compatibility; the framework no longer toggles it — L31), `bhm:despawn`.
+- Properties: `bhm:phase` (int), `bhm:visibility`, `bhm:anim_speed` (float), optional `bhm:idle_state`/`bhm:walk_state`.
+- `minecraft:boss` WITH `name` (else "Unknown"), health/collision/knockback/scale per config, `minecraft:persistent`, family incl. `bhm_boss`.
+- Chase AI = `nearest_attackable_target` + `hurt_by_target` (players only) + `melee_attack` (pathfinding) + `minecraft:attack`; vanilla melee damage cancelled by the framework unless `ai.vanillaMelee: true`. Never `move_towards_target`.
+- Facing is framework-owned (`lookAt` every tick; `ai.faceTarget: false` to opt out). `setSpeed` multiplies `stats.movementSpeed`; `ai.stopDistance` holds position near the target.
+- Bedrock scales mob damage to players by difficulty (Easy x/2+1, measured); `stats.ignoreDifficulty` undoes it; `stats.damageMultiplier` scales all damage.
+- Boss packs use their own namespace for entity ids (e.g. `bhm_demo:test_boss`, `boss:dark_knight`); `bhm:` is the framework's.
 
 ## Animation & baking (design doc §6, §9)
 
-- `playAnimation` with controller names `mb_base`, `mb_action`, `mb_overlay` (same name = override).
-- Animation end = `startTick + length` from baked data → scheduler fires `animEnd`.
-- Baked bone runtime lookup: `t = now - startTick` (clamp/wrap) → offset → × scale → rotate around Y by body yaw → + location.
-- Converter: 16 units = 1 block, 20 samples/s, round to 3 decimals, only referenced bones, numeric keyframes only (any Molang → bone reported unbakeable). FK in the raw json frame with R = Rz(−rz)·Ry(ry)·Rx(−rx) (Blockbench import rules, model facing −Z); output entity space (x, y, −z)/16 (+Z forward, +X left). Baked data = bone PIVOT positions; targeter offsets are applied in the yaw frame at runtime.
-- **Biggest project risk is the coordinate math** (X mirroring, Euler order, `getRotation().y` vs rendered yaw — all [VERIFY]). The bone-marker calibration debug mode comes first.
+- `playAnimation` with controllers `bhm_base`, `bhm_action`, `bhm_overlay`.
+- Converter FK in the raw json frame, R = Rz(−rz)·Ry(ry)·Rx(−rx) (Blockbench import rules, model faces −Z); output entity space (x, y, −z)/16 (+Z forward, +X left). Baked data = bone pivots (+ blade tips), compact-encoded. Verified in-game via the Dark Knight's sword hits.
 
 ## Naming
 
-- Framework IDs/events/groups/properties: `mb:` prefix. Baked bones: `mb_` prefix (pending D5).
+- Framework IDs/events/groups/properties/script events/dynamic properties: `bhm:` prefix. Tags/controllers/families: `bhm_`.
+- Command: `/behemoth` (`bhm:behemoth`). Logs: `[BHM]`.
 - Files: `snake_case.js` for modules and configs, `PascalCase.js` for core classes.
-- Logs: `[MB]` prefix with level (error/warn/info/debug).
 
-## Milestones (design doc §14) — next starts only when exit check passes
+## Milestones (design doc §14)
 
-- **M0:** settle D1–D4 (D1/D2/D9 provisional, D3 defaults implemented, D4 open); pin API version; check [VERIFY] items affecting stub/core; repo + pack skeletons.
-- **M1 (done, tested in-game):** adapter, scheduler + cancel tokens, event bus, BossManager/SkillManager, BossInstance, persistence, validator, `config.d.ts`, debug commands, log levels.
-- **M2 (done, tested in-game):** stub on one boss; minimal converter (lengths, one baked bone); ~10 MVP modules (state, damage, leap, particle, particleRing, sound, delay, setAI, summon, phase change); bone-marker calibration; first profiling.
-- **M3:** full converter (interpolation modes, Molang, unbakeable detection, markers/hit frames, entity patch, config skeleton, report, pytest).
-- **M4 (current):** remaining v1 modules, bone hit-sphere attacks, reset/leash, threat table, particle library, overlay.
-- **M5:** convert 2–3 purchased bosses end to end; set CPU budget; tag v1.
-
-## Open decisions (design doc §15)
-
-D1 pack layout · D2 API version + `min_engine_version` · D3 execution rules · D4 licensing of purchased packs · D5 bone tagging · D6 boss family / Peaceful · D7 player scaling & drops · D8 CPU budget · D9 plain JS + JSDoc/.d.ts vs TypeScript.
-Don't silently pick an answer for an open decision — ask the owner, then record it as [DECIDED] in the design doc.
+- **M1, M2 (done, tested in-game).** **M3:** mostly done (missing: Blockbench timeline markers, `q.anim_time`-only Molang).
+- **M4 (current):** v1 modules ✅, reset/leash ✅, library split + protocol + menu ✅ (needs in-game test), shared particle library, weak-point raycast (v1.1).
+- **M5:** 2–3 converted bosses end to end; set CPU budget; tag v1.
 
 ## Owner & workflow
 
-- Owner: experienced Python full-stack dev; has built Bedrock Script API addons (incl. a scripted boss and a mob-skills system) and Forge/Fabric mods.
-- Troubleshooting is iterative with exact error messages and IDE screenshots.
-- Test environment: Bedrock Dedicated Server + VS Code Minecraft Debugger; `/reload` for iteration.
-- Git: the repo is **public** on GitHub (`origin`, branch `main`). Commit meaningful units of work with clear messages. Purchased boss assets (models, textures, MM YAML) must never be committed (licensing, D4) — keep them under `private/` (git-ignored) and check `git status` before every push.
+- Owner: experienced Python full-stack dev; has built Bedrock Script API addons and Forge/Fabric mods. Iterative troubleshooting with exact errors, screenshots and screen recordings (ffmpeg is installed for frame extraction; put videos in `private/`).
+- Test environment: Bedrock 1.26.52 (Windows GDK build) + `/reload`; `npm run deploy` then rejoin for entity/RP changes.
+- Git: the repo is **public** on GitHub (`origin`, `main`). Never commit anything from `private/` (licensed assets, converted packs, recordings); check `git status` before every push.

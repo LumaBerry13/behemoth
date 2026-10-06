@@ -31,6 +31,7 @@ ks_storm:
   Skills:
   - lightning @Ring{radius=5;points=4}
   - particlering{p=smoke;r=5;points=24} @self
+  - particle{p=flame;a=3} @modelpart{pid=arm;o=model;y=0.5}
 
 ks_dash:
   Conditions:

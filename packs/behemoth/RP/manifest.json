@@ -1,0 +1,45 @@
+{
+  "format_version": 2,
+  "header": {
+    "name": "Behemoth Resources",
+    "description": "Behemoth boss framework \u2014 menu UI and shared assets.",
+    "uuid": "df245f3d-d8e3-40bb-8ca7-71557163c04c",
+    "version": [
+      0,
+      2,
+      0
+    ],
+    "min_engine_version": [
+      1,
+      26,
+      50
+    ]
+  },
+  "modules": [
+    {
+      "type": "resources",
+      "uuid": "918ecea6-2de4-4e29-bb7a-80d5167f135d",
+      "version": [
+        0,
+        2,
+        0
+      ]
+    }
+  ],
+  "dependencies": [
+    {
+      "uuid": "1834f02a-087c-4e2c-9656-e7f632801aef",
+      "version": [
+        0,
+        2,
+        0
+      ]
+    }
+  ],
+  "metadata": {
+    "authors": [
+      "TwistyLime"
+    ],
+    "url": "https://github.com/LumaBerry13/behemoth"
+  }
+}

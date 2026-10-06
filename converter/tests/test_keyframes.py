@@ -1,6 +1,6 @@
 import pytest
 
-from mbconv.keyframes import Unbakeable, parse_channel, sample
+from bhmconv.keyframes import Unbakeable, parse_channel, sample
 
 
 def test_constant_channel():

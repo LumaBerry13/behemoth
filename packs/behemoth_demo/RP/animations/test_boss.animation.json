@@ -1,0 +1,68 @@
+{
+  "format_version": "1.8.0",
+  "animations": {
+    "animation.bhm_test_boss.slam": {
+      "animation_length": 2.0,
+      "anim_time_update": "query.anim_time + query.delta_time * query.property('bhm:anim_speed')",
+      "bones": {
+        "rightArm": {
+          "rotation": {
+            "0.0": [0, 0, 0],
+            "0.8": [-170, 0, 10],
+            "0.95": [-40, 0, 0],
+            "1.6": [-40, 0, 0],
+            "2.0": [0, 0, 0]
+          }
+        },
+        "leftArm": {
+          "rotation": {
+            "0.0": [0, 0, 0],
+            "0.8": [-170, 0, -10],
+            "0.95": [-40, 0, 0],
+            "1.6": [-40, 0, 0],
+            "2.0": [0, 0, 0]
+          }
+        },
+        "body": {
+          "rotation": {
+            "0.0": [0, 0, 0],
+            "0.8": [-10, 0, 0],
+            "0.95": [25, 0, 0],
+            "1.6": [25, 0, 0],
+            "2.0": [0, 0, 0]
+          }
+        }
+      }
+    },
+    "animation.bhm_test_boss.roar": {
+      "animation_length": 2.0,
+      "anim_time_update": "query.anim_time + query.delta_time * query.property('bhm:anim_speed')",
+      "bones": {
+        "head": {
+          "rotation": {
+            "0.0": [0, 0, 0],
+            "0.4": [-35, 0, 0],
+            "1.6": [-35, 0, 0],
+            "2.0": [0, 0, 0]
+          }
+        },
+        "rightArm": {
+          "rotation": {
+            "0.0": [0, 0, 0],
+            "0.4": [-20, 0, 70],
+            "1.6": [-20, 0, 70],
+            "2.0": [0, 0, 0]
+          }
+        },
+        "leftArm": {
+          "rotation": {
+            "0.0": [0, 0, 0],
+            "0.4": [-20, 0, -70],
+            "1.6": [-20, 0, -70],
+            "2.0": [0, 0, 0]
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,64 @@
+{
+  "format_version": 2,
+  "header": {
+    "name": "Behemoth",
+    "description": "Behemoth boss framework \u2014 install once; boss packs run on it.",
+    "uuid": "1834f02a-087c-4e2c-9656-e7f632801aef",
+    "version": [
+      0,
+      2,
+      0
+    ],
+    "min_engine_version": [
+      1,
+      26,
+      50
+    ]
+  },
+  "modules": [
+    {
+      "type": "data",
+      "uuid": "36f7cd4c-0a9e-4104-9341-b57a1ce89d88",
+      "version": [
+        0,
+        2,
+        0
+      ]
+    },
+    {
+      "type": "script",
+      "language": "javascript",
+      "uuid": "6723a78f-1a1a-40d2-8036-7672bde1598c",
+      "entry": "scripts/main.js",
+      "version": [
+        0,
+        2,
+        0
+      ]
+    }
+  ],
+  "dependencies": [
+    {
+      "module_name": "@minecraft/server",
+      "version": "2.10.0"
+    },
+    {
+      "module_name": "@minecraft/server-ui",
+      "version": "2.2.0"
+    },
+    {
+      "uuid": "df245f3d-d8e3-40bb-8ca7-71557163c04c",
+      "version": [
+        0,
+        2,
+        0
+      ]
+    }
+  ],
+  "metadata": {
+    "authors": [
+      "TwistyLime"
+    ],
+    "url": "https://github.com/LumaBerry13/behemoth"
+  }
+}

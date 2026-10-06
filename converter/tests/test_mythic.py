@@ -1,4 +1,4 @@
-from mbconv.mythic import (
+from bhmconv.mythic import (
     Context,
     parse_condition_line,
     parse_skill_line,
@@ -94,7 +94,7 @@ def test_blade_totem_becomes_capsule_and_summon_lands_at_tip():
 
 
 def test_tuning_overrides_and_extra_lines():
-    from mbconv.cli import apply_tuning
+    from bhmconv.cli import apply_tuning
 
     skills = {
         "mob_0_onTimer": {"tr": "onTimer:40", "m": "skill", "o": {"skill": "pick"}, "t": "@target"},
@@ -114,7 +114,7 @@ def test_tuning_overrides_and_extra_lines():
 
 
 def test_extra_lines_can_be_disabled():
-    from mbconv.cli import apply_tuning
+    from bhmconv.cli import apply_tuning
 
     skills = {"a": {"m": "damage", "o": {"amount": 1}}}
     notes = []

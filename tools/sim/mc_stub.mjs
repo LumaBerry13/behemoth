@@ -18,6 +18,7 @@ export const CustomCommandStatus = { Success: 0, Failure: 1 };
 export class MolangVariableMap {
   setFloat() {} setColorRGB() {} setColorRGBA() {} setVector3() {} setSpeedAndDirection() {}
 }
+export class Container {}
 export class ItemStack {
   constructor(typeId, amount = 1) { this.typeId = typeId; this.amount = amount; }
 }
@@ -171,25 +172,57 @@ export const world = {
 
 const intervals = [];
 const deferred = [];
+/** tick → callbacks */
+const timeouts = new Map();
+/** Script events queued for delivery on the next tick (conservative model). */
+let outbox = [];
+
+/** Engine message-size limit modelled by the sim ([VERIFY] real value; see /behemoth → Diagnostics). */
+export const sim = { scriptEventLimit: Number(process.env.BHM_SIM_MSG_LIMIT ?? 2048), scriptEventsSent: 0, scriptEventChars: 0 };
+
 export const system = {
   currentTick: 0,
   afterEvents: { scriptEventReceive: new Signal() },
-  beforeEvents: { startup: new Signal() },
+  beforeEvents: { startup: new Signal(), shutdown: new Signal() },
   runInterval(fn) { intervals.push(fn); return intervals.length; },
   run(fn) { deferred.push(fn); return 0; },
-  runTimeout(fn) { deferred.push(fn); return 0; },
+  runTimeout(fn, delay = 1) {
+    const at = system.currentTick + Math.max(1, delay);
+    if (!timeouts.has(at)) timeouts.set(at, []);
+    timeouts.get(at).push(fn);
+    return 0;
+  },
   runJob(gen) { for (const _ of gen); return 0; },
   clearRun() {},
+  waitTicks(n) { return new Promise((res) => system.runTimeout(res, n)); },
+  sendScriptEvent(id, message) {
+    if (!/^[a-z0-9_]+:[a-z0-9_]+$/.test(id)) throw new Error(`NamespaceNameError: ${id}`);
+    if (message.length > sim.scriptEventLimit) throw new Error(`message too long (${message.length} > ${sim.scriptEventLimit})`);
+    sim.scriptEventsSent++;
+    sim.scriptEventChars += message.length;
+    note("scriptevent", `${id} ${message.length} chars`);
+    outbox.push({ id, message });
+  },
 };
 
 /** Advance the simulation by n ticks. */
 export function tick(n = 1) {
   for (let i = 0; i < n; i++) {
     system.currentTick++;
+    const mail = outbox;
+    outbox = [];
+    for (const m of mail) {
+      system.afterEvents.scriptEventReceive.fire({ id: m.id, message: m.message, sourceType: "Server" });
+    }
     for (const fn of deferred.splice(0)) fn();
+    for (const fn of timeouts.get(system.currentTick) ?? []) fn();
+    timeouts.delete(system.currentTick);
     for (const fn of intervals) fn();
   }
 }
+
+/** Let pending promise callbacks (async menu code) run. */
+export const flush = () => new Promise((r) => setImmediate(r));
 
 function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z); }
 function round(n) { return Math.round(n * 100) / 100; }

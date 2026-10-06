@@ -3,9 +3,7 @@
 //   npm run sim:scenarios -- [bossTypeId] [--death-event E]
 // Uses the given boss (default: the converted Dark Knight if present, else the
 // test boss) for every scenario.
-import { register } from "node:module";
-
-register("./loader.mjs", import.meta.url);
+import { boot } from "./boot.mjs";
 
 const args = process.argv.slice(2);
 const flag = (name, def) => {
@@ -15,13 +13,10 @@ const flag = (name, def) => {
 const deathEvent = flag("--death-event", "dark_knight:start_death");
 const typeArg = args[0];
 
-const mc = await import("./mc_stub.mjs");
-await import("../../BP/scripts/main.js");
-const { services } = await import("../../BP/scripts/core/services.js");
+const { mc, services, commands } = await boot();
 const dim = mc.world.getDimension("overworld");
-mc.tick(2);
 
-const typeId = typeArg ?? (services.bosses.configs.has("boss:dark_knight") ? "boss:dark_knight" : "mb:test_boss");
+const typeId = typeArg ?? (services.bosses.configs.has("boss:dark_knight") ? "boss:dark_knight" : "bhm_demo:test_boss");
 const usesCustomDeath = !!services.bosses.configs.get(typeId)?.config.death?.event;
 
 let failures = 0;
@@ -167,7 +162,7 @@ console.log("\n6. invulnerability is script-level (entity groups untouched)");
   boss.setInvulnerable(false);
   e.applyDamage(10, { cause: "entityAttack" });
   check("damage applies again", e.health.currentValue === hp - 10);
-  check("no mb:invuln_* entity events fired", events() === before);
+  check("no bhm:invuln_* entity events fired", events() === before);
 }
 
 // ---------------------------------------------------------------------------
@@ -210,17 +205,17 @@ console.log("\n7. module showcase (demo_* skills, test boss only)");
     out = run("demo_lunge", 5);
     check("lunge toward @RandomPlayer", has(out, "impulse", "(0, 0.1, 1.4)"));
     out = run("demo_teleport", 5);
-    check("teleportBehind moves the boss", has(out, "teleport", "mb:test_boss"));
+    check("teleportBehind moves the boss", has(out, "teleport", "bhm_demo:test_boss"));
     e.location = { x: 0, y: 64, z: 0 };
     out = run("demo_blocks", 5);
     const placed = out.filter(([, k, d]) => k === "block" && d.endsWith("cobweb")).length;
     check("tempBlocks placed (mobGriefing on)", placed > 0, `${placed} blocks`);
-    check("tempBlocks persisted for reload safety", typeof mc.world.dyn["mb:tempblocks"] === "string");
+    check("tempBlocks persisted for reload safety", typeof mc.world.dyn["bhm:tempblocks"] === "string");
     out = run("demo_title", 100);
     check("tempBlocks restored to air after their time", out.filter(([, k, d]) => k === "block" && d.endsWith("air")).length === placed);
-    check("pending tempBlocks cleared from the world property", mc.world.dyn["mb:tempblocks"] === undefined);
+    check("pending tempBlocks cleared from the world property", mc.world.dyn["bhm:tempblocks"] === undefined);
     run("demo_property", 2);
-    check("setProperty", e.props["mb:visibility"] === 2);
+    check("setProperty", e.props["bhm:visibility"] === 2);
     let third = 0;
     for (let i = 0; i < 3; i++) third += run("demo_counter", 3).filter(([, k, d]) => k === "chat" && d.includes("Third press")).length;
     check("setVariable + variable condition fire on the 3rd press only", third === 1 && boss.vars.presses === 3);
@@ -232,6 +227,133 @@ console.log("\n7. module showcase (demo_* skills, test boss only)");
     check("onInteract + lineOfSight/height/playersNearby", mc.log.slice(before).some(([, k, d]) => k === "chat" && d.includes("ignores you")));
     player.remove();
   }
+}
+
+// ---------------------------------------------------------------------------
+// Boss-pack protocol (framework ⇄ connector over script events)
+// ---------------------------------------------------------------------------
+const reg = services.registrar;
+const { fnv1a } = await import(new URL("../../packs/behemoth/BP/scripts/core/Registrar.js", import.meta.url).href);
+/** Script events sent from now on. */
+const sentSince = (start) => mc.log.slice(start).filter(([, k]) => k === "scriptevent").map(([, , d]) => d.split(" ")[0]);
+/** Deliver a raw script event as if another pack sent it. */
+const inject = (id, message, extra = {}) => mc.system.afterEvents.scriptEventReceive.fire({ id, message, sourceType: "Server", ...extra });
+
+console.log("\n8. reload: bosses restored from the framework's cache, nothing re-sent");
+{
+  const packIds = [...reg.packs.keys()];
+  const types = [...services.bosses.configs.keys()];
+  // Simulate /reload: framework memory is gone, world storage is not.
+  reg.packs.clear();
+  reg.owners.clear();
+  reg.requested.clear();
+  services.bosses.configs.clear();
+  reg.cacheLoaded = false;
+  const t0 = performance.now();
+  reg.restoreCache();
+  const ms = performance.now() - t0;
+  check("every boss type is back immediately", types.every((t) => services.bosses.configs.has(t)), `${types.length} type(s) in ${ms.toFixed(1)} ms`);
+  check("packs marked as loaded from cache", packIds.every((p) => reg.packs.get(p)?.source === "cache"));
+  const start = mc.log.length;
+  mc.system.sendScriptEvent("bhm:ready", JSON.stringify({ p: 1, fw: "0.2.0" })); // what the framework does after restoring
+  mc.tick(4);
+  const sent = sentSince(start);
+  check("packs only said hello (no payload re-sent)", !sent.includes("bhm:need") && !sent.includes("bhm:part"), sent.join(", "));
+  check("hellos acknowledged", sent.filter((s) => s === "bhm:ack").length === packIds.length);
+}
+
+console.log("\n9. a pack with a changed payload is asked for it again");
+{
+  const start = mc.log.length;
+  inject("bhm:hello", JSON.stringify({ p: 1, pack: "behemoth_demo", ver: "9.9.9", hash: "deadbeef", size: 10, min: "0.2.0" }));
+  mc.tick(1);
+  check("framework sent bhm:need", sentSince(start).includes("bhm:need"));
+  reg.requested.clear();
+}
+
+console.log("\n10. a player's /scriptevent is ignored");
+{
+  const before = reg.packs.size;
+  const fakePlayer = new mc.Player("Griefer", dim, { x: 0, y: 64, z: 0 });
+  const start = mc.log.length;
+  inject("bhm:hello", JSON.stringify({ p: 1, pack: "evil", ver: "1", hash: "00000000", size: 1 }), { sourceEntity: fakePlayer });
+  mc.tick(1);
+  check("no reaction, no new pack", sentSince(start).length === 0 && reg.packs.size === before);
+  fakePlayer.remove();
+}
+
+console.log("\n11. protocol / version mismatch is refused with a reason");
+{
+  const start = mc.log.length;
+  inject("bhm:hello", JSON.stringify({ p: 99, pack: "future_pack", ver: "1", hash: "11111111", size: 1 }));
+  inject("bhm:hello", JSON.stringify({ p: 1, pack: "picky_pack", ver: "1", hash: "22222222", size: 1, min: "99.0.0" }));
+  mc.tick(1);
+  const acks = mc.log.slice(start).filter(([, k, d]) => k === "scriptevent" && d.startsWith("bhm:ack")).length;
+  check("both refused via bhm:ack (no transfer)", acks === 2 && !sentSince(start).includes("bhm:need"));
+}
+
+/** Push a payload as `pack` the way the connector does. */
+function sendPayload(pack, payloadObj, corrupt = false) {
+  const payload = JSON.stringify(payloadObj);
+  const hash = fnv1a(payload);
+  const body = corrupt ? payload.replace("Test", "Tset") : payload;
+  inject("bhm:hello", JSON.stringify({ p: 1, pack, ver: payloadObj.ver, hash, size: payload.length }));
+  mc.tick(1);
+  const n = Math.ceil(body.length / 1500);
+  for (let i = 0; i < n; i++) inject("bhm:part", `${pack}|${hash}|${i}|${n}|${body.slice(i * 1500, (i + 1) * 1500)}`);
+  mc.tick(1);
+  return hash;
+}
+
+console.log("\n12. a second pack cannot take over an existing boss type");
+{
+  const demo = services.bosses.configs.get("bhm_demo:test_boss")?.config;
+  if (!demo) check("skipped (demo boss not loaded)", true);
+  else {
+    const start = mc.log.length;
+    sendPayload("copycat", { ver: "1.0.0", bosses: [JSON.parse(JSON.stringify(demo))] });
+    const ack = mc.log.slice(start).find(([, k, d]) => k === "scriptevent" && d.startsWith("bhm:ack"));
+    check("type still owned by behemoth_demo", reg.owners.get("bhm_demo:test_boss") === "behemoth_demo");
+    check("copycat got an error ack", !!ack && reg.packs.get("copycat")?.errors.length === 1);
+  }
+}
+
+console.log("\n13. corrupt payload is rejected and requested again");
+{
+  const start = mc.log.length;
+  sendPayload("mangled", { ver: "1.0.0", bosses: [{ schemaVersion: 1, id: "mangled:Test", skills: {} }] }, true);
+  check("not installed", !reg.packs.has("mangled"));
+  check("re-requested with bhm:need", sentSince(start).filter((s) => s === "bhm:need").length === 2);
+}
+
+console.log("\n14. a stalled transfer is discarded");
+{
+  inject("bhm:part", "stalled|abcdef01|0|3|{\"ver\":");
+  mc.tick(1);
+  check("transfer open", reg.transfers.has("stalled"));
+  mc.tick(260);
+  check("dropped after the timeout", !reg.transfers.has("stalled"));
+}
+
+console.log("\n15. /behemoth menu");
+{
+  const ui = await import("./ui_stub.mjs");
+  const player = new mc.Player("Admin", dim, { x: 0, y: 64, z: 0 });
+  const before = ui.shown.length;
+  ui.clicks.push(10); // click "Debug overlay"
+  const overlayBefore = services.settings.overlay;
+  commands.get("bhm:behemoth")({ sourceEntity: player }); // what typing /behemoth does
+  for (let i = 0; i < 5; i++) { await mc.flush(); mc.tick(1); }
+  const forms = ui.shown.slice(before);
+  const first = forms[0];
+  check("menu opens as a 54-slot chest form", !!first && first.buttons.length === 54);
+  const borders = first?.buttons.filter((b) => /glass_(gray|black)/.test(b.icon ?? "")).length ?? 0;
+  check("border of gray + black glass panes", borders >= 20, `${borders} border slots`);
+  check("clicking a toggle flips the setting", services.settings.overlay === !overlayBefore);
+  check("setting persisted in the world", JSON.parse(mc.world.dyn["bhm:settings"]).overlay === !overlayBefore);
+  check("menu re-opened after the click", forms.length >= 2);
+  services.settings.toggle("overlay");
+  player.remove();
 }
 
 console.log(failures ? `\n[scenarios] ${failures} FAILED` : "\n[scenarios] all passed");

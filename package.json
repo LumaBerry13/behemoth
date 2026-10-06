@@ -1,8 +1,8 @@
 {
-  "name": "mythic-bedrock",
-  "version": "0.1.0",
+  "name": "behemoth",
+  "version": "0.2.0",
   "private": true,
-  "description": "MythicMobs-style boss framework for Minecraft Bedrock (Script API)",
+  "description": "Behemoth \u2014 boss framework for Minecraft Bedrock (Script API), with a MythicMobs/ModelEngine converter",
   "type": "module",
   "scripts": {
     "check": "tsc -p tsconfig.json",
@@ -12,10 +12,13 @@
     "sim:scenarios": "node tools/sim/scenarios.mjs",
     "convert": "python converter/convert.py",
     "test:converter": "python -m pytest converter/tests -q",
-    "deploy": "node tools/deploy.mjs"
+    "test": "npm run check && npm run validate && npm run test:converter && npm run sim:scenarios && npm run sim:scenarios -- bhm_demo:test_boss",
+    "deploy": "node tools/deploy.mjs",
+    "package": "python tools/package.py"
   },
   "devDependencies": {
     "@minecraft/server": "2.10.0",
+    "@minecraft/server-ui": "^2.2.0",
     "typescript": "^7.0.2"
   }
 }
