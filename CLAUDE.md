@@ -76,9 +76,9 @@ Module contracts (typed in `types/config.d.ts`):
 
 - framework → packs: `bhm:ready {p, fw}`, `bhm:need {p, pack, hash}`, `bhm:ack {p, pack, hash, ok, bosses, errors}`.
 - pack → framework: `bhm:hello {p, pack, ver, hash, size, min}`, `bhm:part "<pack>|<hash>|<i>|<n>|<data>"` (raw).
-- **Cache-first:** accepted payloads are stored in world dynamic properties (`bhm:cache` index + `bhm:cache:<pack>:<i>` parts ≤ 30000 chars). In its first tick after a load/reload the framework restores every cached pack, then sends `bhm:ready`; packs say hello; matching hash → ack only (nothing re-sent). New/changed hash → one `bhm:need` (deduped) → parts (connector starts at 8000 chars and halves on refusal) → FNV-1a checksum → JSON → track decode → validate → bind → cache → ack.
+- **Cache-first:** accepted payloads are stored in world dynamic properties (`bhm:cache` index + `bhm:cache:<pack>:<i>` parts ≤ 30000 chars). In its first tick after a load/reload the framework restores every cached pack, then sends `bhm:ready`; packs say hello; matching hash → ack only (nothing re-sent). New/changed hash → one `bhm:need` (deduped) → parts (connector starts at 65536 chars and halves on refusal) → FNV-1a checksum → JSON → track decode → validate → bind → cache → ack.
 - Guards: script-sent events only (events with a source entity/block are ignored), protocol + `minFramework` checks, a type owned by one pack can't be taken by another, transfers time out after 200 ticks, packs not seen for 1200 ticks lose their cache entry (bosses stay loaded until reload), duplicates ignored.
-- Payload size: Dark Knight 26 KB (compact tracks), demo 5 KB. Real engine message limit / delivery delay: measure with `/behemoth` → Diagnostics → probe ([VERIFY]; sim assumes 2048 chars, next tick).
+- Payload size: Dark Knight 26 KB (compact tracks), demo 5 KB. Measured in-game (2026-10-06, 1.26.52): script-event messages ≥ 262144 chars accepted, delivered 1 tick later; cache restore after `/reload` 1 ms. Connector starts at 65536-char parts (halves on refusal). The sim keeps a 2048-char limit on purpose so chunking stays tested.
 
 ### Menu (`/behemoth`)
 
@@ -145,7 +145,7 @@ Every boss entity JSON must contain:
 ## Milestones (design doc §14)
 
 - **M1, M2 (done, tested in-game).** **M3:** mostly done (missing: Blockbench timeline markers, `q.anim_time`-only Molang).
-- **M4 (current):** v1 modules ✅, reset/leash ✅, library split + protocol + menu ✅ (needs in-game test), shared particle library, weak-point raycast (v1.1).
+- **M4 (current):** v1 modules ✅, reset/leash ✅, library split + protocol + menu ✅ (tested in-game 2026-10-06), shared particle library, weak-point raycast (v1.1).
 - **M5:** 2–3 converted bosses end to end; set CPU budget; tag v1.
 
 ## Owner & workflow

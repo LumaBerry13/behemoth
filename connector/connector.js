@@ -6,14 +6,14 @@
 //
 // How it works: the pack says hello with a hash of its payload. If the framework already
 // has that exact payload cached (normal case after /reload), nothing else is sent. If not,
-// the framework asks for it and the payload is streamed as script-event parts; a part that
+// the framework asks for it and the payload is streamed as script-event parts (usually one); a part that
 // is too long for the engine makes the connector retry with smaller parts.
 //
 // Boss configs must be plain data (JSON): functions are not transferable and are reported.
 import { system } from "@minecraft/server";
 
 const PROTOCOL = 1;
-const MAX_PART = 8000;
+const MAX_PART = 65536; // measured in-game: >= 262144 chars accepted; halved automatically if refused
 const MIN_PART = 256;
 const RETRY_TICKS = 200;
 const MAX_HELLOS = 4;
