@@ -6,6 +6,7 @@ import {
   world,
   system,
   Entity,
+  EntityTypes,
   Player,
   GameMode,
   ItemStack,
@@ -218,6 +219,22 @@ export const Adapter = {
   },
   getAllDimensions() {
     return DIMENSION_IDS.map((id) => world.getDimension(id));
+  },
+  /** Is this entity type defined by some enabled pack? @param {string} typeId */
+  entityTypeExists(typeId) {
+    try {
+      return EntityTypes.get(typeId) !== undefined;
+    } catch {
+      return false;
+    }
+  },
+  /**
+   * Teleport an entity (e.g. a player) to a location in any dimension.
+   * @param {Entity} e @param {string} dimensionId @param {Vector3} loc @param {Vector3} [facing]
+   */
+  teleportTo(e, dimensionId, loc, facing) {
+    if (!e.isValid) return;
+    e.teleport(loc, { dimension: world.getDimension(dimensionId), ...(facing ? { facingLocation: facing } : {}) });
   },
   /** @param {string} id */
   getEntity(id) {

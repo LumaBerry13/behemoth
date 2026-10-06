@@ -1,5 +1,8 @@
 // Summons entities around each target location, with per-boss and global caps.
-// o: { type, amount?=1, radius?=2, cap?=8, onSurface?=false, lifetime? (ticks) }
+// Summons are bound to the boss by default: removed when it dies, despawns or
+// resets (bind: false keeps them). If `type` is a registered minion config, the
+// framework drives it like any other Behemoth entity.
+// o: { type, amount?=1, radius?=2, cap?=8, onSurface?=false, lifetime? (ticks), bind?=true }
 const GLOBAL_CAP = 64;
 
 /** @type {import("../../types/config").Mechanic} */
@@ -42,6 +45,7 @@ export default {
         if (!e) continue;
         a.addTag(e, "bhm_summon");
         boss.summons.add(e.id);
+        if (o.bind !== false) boss.boundSummons.add(e.id);
         if (o.lifetime) ctx.services.bosses.trackTemporary(e, o.lifetime);
         global++;
       }

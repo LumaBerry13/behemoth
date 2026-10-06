@@ -60,6 +60,7 @@ export class Validator {
       if (typeof config.id !== "string" || !config.id.includes(":")) fatal.push(`id must be a namespaced entity type id`);
       if (!config.skills || typeof config.skills !== "object") fatal.push("skills object is required");
       if (config.ai?.default && !VALID_AI.includes(config.ai.default)) fatal.push(`ai.default must be one of ${VALID_AI.join("/")}`);
+      if (config.kind !== undefined && config.kind !== "boss" && config.kind !== "minion") fatal.push(`kind must be "boss" or "minion"`);
       for (const req of config.requires ?? []) {
         if (!this.registry.isUsable(req)) fatal.push(`requires mechanic "${req}" which is not registered or disabled`);
       }

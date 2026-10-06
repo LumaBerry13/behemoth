@@ -60,8 +60,8 @@ One command, for operators, and it works without cheats. It opens a chest UI wit
   - Icon set: vanilla or your own icons.
   - Performance: framework milliseconds per tick.
   - Settings are saved in the world.
-- **Bosses:** every registered boss; click one to spawn it.
-- **Nearest boss:** live status; reset, despawn, previous/next phase, or cast any skill.
+- **Spawn a boss:** every registered boss (minions are not listed); click one to spawn it.
+- **Bosses in world:** every boss in the world with its coordinates, nearest first (also unloaded ones). Open one for live status, reset, despawn, previous/next phase, casting any skill, or teleporting to it.
 - **Boss packs:** version, cache or transfer state, and errors for each pack.
 - **Diagnostics:** measures the real script-event size limit and delivery delay, and clears the cache.
 
@@ -199,9 +199,15 @@ export default {
 
 | Milestone | Scope |
 | --- | --- |
-| M1–M2 (done) | Core runtime, first converted boss tested in-game |
-| M4 (current) | v1 modules (done), reset/leash (done), library split (done), shared particle library |
+| M0 (done) | Decisions, API version pin, repo and pack skeletons |
+| M1 (done) | Core runtime: adapter, scheduler, event bus, managers, persistence, validator |
+| M2 (done) | Entity stub, minimal converter, first modules, first converted boss tested in-game |
+| M3 (mostly done) | Full converter: interpolation modes, Molang sampling, unbakeable-bone detection, entity patch, config skeleton, report, pytest. Missing: Blockbench timeline markers / hit frames, `q.anim_time`-only Molang |
+| M4 (current) | v1 modules (done), reset/leash (done), library split (done), minions (done), shared particle library |
 | M5 | 2–3 converted bosses end to end, CPU budget, tag v1 |
+
+M3 was built alongside M2 and M4 (the Dark Knight needed most of it), so it
+has no separate "done" date.
 
 The full design, platform limits and open decisions are in
 [`Behemoth — Design & Project Documentation.md`](Behemoth%20—%20Design%20&%20Project%20Documentation.md).

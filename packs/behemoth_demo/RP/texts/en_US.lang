@@ -1,2 +1,4 @@
 entity.bhm_demo:test_boss.name=Test Boss
 item.spawn_egg.entity.bhm_demo:test_boss.name=Spawn Test Boss
+entity.bhm_demo:minion.name=Test Minion
+item.spawn_egg.entity.bhm_demo:minion.name=Spawn Test Minion

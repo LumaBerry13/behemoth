@@ -81,6 +81,12 @@ export interface BossConfig {
   schemaVersion: 1;
   /** Entity type ID this config controls. */
   id: string;
+  /**
+   * "boss" (default): listed in the /behemoth menu, boss bar, editable.
+   * "minion": driven by the framework (skills, AI) but not listed or edited in the menu;
+   * typically summoned by a boss and bound to it.
+   */
+  kind?: "boss" | "minion";
   display?: { name?: string; bossBar?: boolean };
   stats?: {
     health?: number;

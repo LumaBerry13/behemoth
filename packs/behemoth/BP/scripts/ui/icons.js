@@ -18,6 +18,7 @@ const VANILLA = {
   bosses: "textures/items/egg_null",
   boss: "textures/items/egg_null",
   nearest_boss: "textures/items/compass_item",
+  teleport: "textures/items/ender_pearl",
   boss_info: "textures/items/nether_star",
   reset: "textures/items/totem",
   despawn: "textures/items/gunpowder",

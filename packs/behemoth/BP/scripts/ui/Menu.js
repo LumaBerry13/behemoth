@@ -14,7 +14,6 @@ const CLOSE = 49;
 const NEXT = 50;
 /** Interior slots, row by row (rows 1–4, columns 1–7). */
 const INTERIOR = [10, 11, 12, 13, 14, 15, 16, 19, 20, 21, 22, 23, 24, 25, 28, 29, 30, 31, 32, 33, 34, 37, 38, 39, 40, 41, 42, 43];
-const NEAREST_RANGE = 64;
 
 const on = (v) => (v ? "§aEnabled" : "§cDisabled");
 const LOG_COLORS = { error: "§c", warn: "§6", info: "§a", debug: "§b" };
@@ -134,14 +133,14 @@ export class Menu {
         run: (p) => this.main(p),
       },
       {
-        slot: 29, name: "§eBosses", icon: this.icon("bosses"),
-        lore: [`§7${this.s.bosses.configs.size} boss type(s) registered.`, "§8Spawn one at your position"],
-        run: (p) => this.bossList(p, 0),
+        slot: 29, name: "§eSpawn a boss", icon: this.icon("bosses"),
+        lore: [`§7${this.spawnable().length} boss type(s) available.`, "§8Spawn one at your position"],
+        run: (p) => this.spawnList(p, 0),
       },
       {
-        slot: 31, name: "§eNearest boss", icon: this.icon("nearest_boss"),
-        lore: ["§7Reset, despawn, change phase", "§7or cast a skill.", `§8Within ${NEAREST_RANGE} blocks`],
-        run: (p) => this.nearest(p),
+        slot: 31, name: "§eBosses in world", icon: this.icon("nearest_boss"),
+        lore: ["§7Every boss, nearest first, with", "§7coordinates. Open one to edit it", "§7or teleport to it."],
+        run: (p) => this.worldBosses(p, 0),
       },
       {
         slot: 33, name: "§eBoss packs", icon: this.icon("packs"),
@@ -157,9 +156,16 @@ export class Menu {
   // -------------------------------------------------------------------------
   // Bosses
   // -------------------------------------------------------------------------
+  /** Registered boss configs (not minions) whose entity type is installed. @private */
+  spawnable() {
+    return [...this.s.bosses.configs.values()].filter(
+      (c) => (c.config.kind ?? "boss") === "boss" && Adapter.entityTypeExists(c.config.id)
+    );
+  }
+
   /** @param {Player} player @param {number} n */
-  bossList(player, n) {
-    const entries = [...this.s.bosses.configs.values()].map((c) => {
+  spawnList(player, n) {
+    const entries = this.spawnable().map((c) => {
       const cfg = c.config;
       return {
         name: `§f${cfg.display?.name ?? cfg.id}`, icon: this.icon("boss"),
@@ -169,56 +175,113 @@ export class Menu {
           "", "§8Click to spawn at your position",
         ],
         run: (p) => {
-          this.s.bosses.spawn(cfg.id, p.dimension, p.location);
-          Adapter.message(p, `§a[Behemoth] spawned ${cfg.display?.name ?? cfg.id}`);
+          const boss = this.s.bosses.spawn(cfg.id, p.dimension, p.location);
+          Adapter.message(p, boss ? `§a[Behemoth] spawned ${cfg.display?.name ?? cfg.id}` : `§c[Behemoth] could not spawn ${cfg.id}`);
         },
       };
     });
-    if (!entries.length) entries.push({ name: "§7No bosses registered", icon: this.icon("empty"), lore: ["§8Install a boss pack that uses Behemoth."], run: (p) => this.bossList(p, 0) });
-    return this.listPage(player, "§lBosses", entries, n, (p, k) => this.bossList(p, k), (p) => this.main(p));
+    if (!entries.length) entries.push({ name: "§7No bosses available", icon: this.icon("empty"), lore: ["§8Install a boss pack that uses Behemoth."], run: (p) => this.spawnList(p, 0) });
+    return this.listPage(player, "§lSpawn a boss", entries, n, (p, k) => this.spawnList(p, k), (p) => this.main(p));
   }
 
-  /** @param {Player} player */
-  nearest(player) {
-    const boss = this.s.bosses.nearest(player.dimension, player.location, NEAREST_RANGE);
+  /** Every boss in the world, nearest first (minions are never listed). @param {Player} player @param {number} n */
+  worldBosses(player, n) {
+    const list = this.s.bosses.worldList(player.dimension, player.location);
+    const dimName = (d) => d.replace("minecraft:", "");
+    const entries = list.map((e) => {
+      const where = `§7${dimName(e.dim)} §f${Math.round(e.x)} ${Math.round(e.y)} ${Math.round(e.z)}`;
+      const dist = Number.isFinite(e.dist) ? `§7${Math.round(e.dist)} blocks away` : "§7other dimension";
+      const hp = e.loaded ? Adapter.getHealth(e.boss.entity) : undefined;
+      return {
+        name: `${e.loaded ? "§f" : "§7"}${e.name}`, icon: this.icon(e.loaded ? "boss_info" : "boss"),
+        lore: [
+          where, dist,
+          ...(e.loaded ? [`§7Health: §f${Math.ceil(hp.current)}/${hp.max}  §7Phase: §f${e.boss.phase}`] : ["§8Not loaded (chunk unloaded)"]),
+          "", "§8Click to open",
+        ],
+        run: (p) => this.bossDetail(p, e.id),
+      };
+    });
+    if (!entries.length) entries.push({ name: "§7No bosses in the world", icon: this.icon("empty"), lore: ["§8Spawn one from the main menu."], run: (p) => this.worldBosses(p, 0) });
+    return this.listPage(player, "§lBosses in world", entries, n, (p, k) => this.worldBosses(p, k), (p) => this.main(p));
+  }
+
+  /**
+   * One boss: live info and edits when loaded; teleport always.
+   * @param {Player} player @param {string} id entity id
+   */
+  bossDetail(player, id) {
+    const back = (p) => this.worldBosses(p, 0);
+    const boss = this.s.bosses.get(id);
+    const known = this.s.bosses.known.get(id);
+    if (!boss && !known) return this.worldBosses(player, 0); // gone meanwhile
+
+    /** @type {Item[]} */
+    const teleport = [{
+      slot: 31, name: "§bTeleport to boss", icon: this.icon("teleport"),
+      lore: ["§7Puts you a few blocks away from it,", "§7facing it."],
+      run: (p) => {
+        const dim = boss ? boss.dimension.id : known.dim;
+        const l = boss ? boss.location : known;
+        Adapter.teleportTo(p, dim, { x: l.x + 3, y: l.y + 1, z: l.z + 3 }, { x: l.x, y: l.y + 1.5, z: l.z });
+        Adapter.message(p, `§a[Behemoth] teleported to ${boss?.config.display?.name ?? known.name}`);
+      },
+    }];
+
     if (!boss) {
-      return this.page(player, "§lNearest boss", [
-        { slot: 22, name: "§7No boss nearby", icon: this.icon("empty"), lore: [`§8None within ${NEAREST_RANGE} blocks.`], run: (p) => this.nearest(p) },
-      ], { back: (p) => this.main(p) });
+      return this.page(player, `§l${known.name}`, [
+        {
+          slot: 13, name: `§7${known.name}`, icon: this.icon("boss"),
+          lore: [`§7${known.type}`, `§7${known.dim.replace("minecraft:", "")} §f${Math.round(known.x)} ${Math.round(known.y)} ${Math.round(known.z)}`,
+            "", "§8Not loaded. Teleport there to load it;", "§8then you can edit it."],
+          run: (p) => this.bossDetail(p, id),
+        },
+        ...teleport,
+        {
+          slot: 33, name: "§cForget this entry", icon: this.icon("despawn"),
+          lore: ["§7Use if the boss no longer exists", "§7(e.g. removed while unloaded)."],
+          run: (p) => { this.s.bosses.forget(id); return back(p); },
+        },
+      ], { back });
     }
+
     const cfg = boss.config;
     const h = Adapter.getHealth(boss.entity);
     const now = this.s.scheduler.tick;
     const phases = cfg.phases ?? [];
     const idx = phases.findIndex((ph) => ph.id === boss.phase);
     const target = boss.getTarget();
+    const l = boss.location;
     const cds = [...boss.cooldowns].filter(([, at]) => at > now).map(([name, at]) => `§7${name} §f${((at - now) / 20).toFixed(1)}s`);
-    const again = (p) => this.nearest(p);
+    const again = (p) => this.bossDetail(p, id);
     /** @type {Item[]} */
     const items = [
       {
         slot: 13, name: `§f${cfg.display?.name ?? cfg.id}`, icon: this.icon("boss_info"),
         lore: [
+          `§7${boss.dimension.id.replace("minecraft:", "")} §f${Math.round(l.x)} ${Math.round(l.y)} ${Math.round(l.z)}`,
           `§7Health: §f${Math.ceil(h.current)}/${h.max}`, `§7Phase: §f${boss.phase}  §7AI: §f${boss.aiMode}`,
           `§7Target: §f${target ? (target.nameTag || target.typeId) : "none"}`,
           `§7Running: §f${[...boss.runs].map((r) => r.skill.name).join(", ") || "-"}`,
+          `§7Minions: §f${boss.boundSummons.size}`,
           ...(cds.length ? ["§7Cooldowns:", ...cds.slice(0, 6)] : []), "", "§8Click to refresh",
         ],
         run: again,
       },
-      { slot: 29, name: "§aReset", icon: this.icon("reset"), lore: ["§7Full health, first phase,", "§7back to its spawn point."], run: (p) => { boss.reset("menu"); return again(p); } },
-      { slot: 30, name: "§cDespawn", icon: this.icon("despawn"), lore: ["§7Remove it: no drops, no death skills."], run: (p) => { this.s.bosses.despawn(boss); return this.main(p); } },
+      { slot: 28, name: "§aReset", icon: this.icon("reset"), lore: ["§7Full health, first phase,", "§7back to its spawn point."], run: (p) => { boss.reset("menu"); return again(p); } },
+      { slot: 29, name: "§cDespawn", icon: this.icon("despawn"), lore: ["§7Remove it: no drops, no death skills."], run: (p) => { this.s.bosses.despawn(boss); return back(p); } },
       {
-        slot: 32, name: "§fPrevious phase", icon: this.icon("phase_prev"), lore: [`§7Current: §f${boss.phase}`],
+        slot: 30, name: "§fPrevious phase", icon: this.icon("phase_prev"), lore: [`§7Current: §f${boss.phase}`],
         run: (p) => { if (idx > 0) boss.setPhase(phases[idx - 1].id); return again(p); },
       },
+      ...teleport,
       {
-        slot: 33, name: "§fNext phase", icon: this.icon("phase_next"), lore: [`§7Current: §f${boss.phase}`, "§8Runs the phase's onEnter skills"],
+        slot: 32, name: "§fNext phase", icon: this.icon("phase_next"), lore: [`§7Current: §f${boss.phase}`, "§8Runs the phase's onEnter skills"],
         run: (p) => { if (idx >= 0 && idx < phases.length - 1) boss.setPhase(phases[idx + 1].id); return again(p); },
       },
-      { slot: 34, name: "§eSkills", icon: this.icon("skills"), lore: [`§7${boss.compiled.skills.size} skill(s)`, "§8Cast one now"], run: (p) => this.skills(p, boss, 0) },
+      { slot: 33, name: "§eSkills", icon: this.icon("skills"), lore: [`§7${boss.compiled.skills.size} skill(s)`, "§8Cast one now"], run: (p) => this.skills(p, boss, 0) },
     ];
-    return this.page(player, "§lNearest boss", items, { back: (p) => this.main(p) });
+    return this.page(player, `§l${cfg.display?.name ?? "Boss"}`, items, { back });
   }
 
   /** @param {Player} player @param {import("../core/BossInstance.js").BossInstance} boss @param {number} n */
@@ -234,7 +297,7 @@ export class Menu {
         return this.skills(p, boss, n);
       },
     }));
-    return this.listPage(player, "§lSkills", entries, n, (p, k) => this.skills(p, boss, k), (p) => this.nearest(p));
+    return this.listPage(player, "§lSkills", entries, n, (p, k) => this.skills(p, boss, k), (p) => this.bossDetail(p, boss.id));
   }
 
   // -------------------------------------------------------------------------
@@ -247,7 +310,8 @@ export class Menu {
       lore: [
         `§7Version: §f${info.ver}`,
         `§7Loaded from: §f${info.source === "cache" ? "cache (instant)" : "transfer"}${info.seen ? "" : " §8(not seen yet)"}`,
-        `§7Bosses: §f${info.bosses.join(", ") || "none"}`,
+        `§7Bosses: §f${info.bosses.filter((b) => (this.s.bosses.configs.get(b)?.config.kind ?? "boss") === "boss").join(", ") || "none"}`,
+        `§7Minions: §f${info.bosses.filter((b) => this.s.bosses.configs.get(b)?.config.kind === "minion").join(", ") || "none"}`,
         ...(info.stats ? [`§7Transfer: §f${info.stats.parts} part(s), ${info.stats.chars} chars, ${info.stats.ticks} tick(s)`] : []),
         ...info.errors.slice(0, 4).map((e) => `§c${e}`),
       ],

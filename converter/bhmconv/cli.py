@@ -229,6 +229,7 @@ def convert(job_path: Path, out: Path | None = None) -> Path:
     config = {
         "schemaVersion": 1,
         "id": entity_id,
+        "kind": "boss",
         "display": {"name": tb["display"], "bossBar": True},
         "stats": {"health": tb["health"], "scale": 1,
                   **({"movementSpeed": movement_speed(behavior)} if movement_speed(behavior) else {}),

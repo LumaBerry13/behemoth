@@ -20,15 +20,16 @@ If a custom icon is missing, that slot shows Minecraft's missing-texture icon. S
 | `seed` | Settings → Seeded randomness | `textures/items/ender_eye` |
 | `icon_set` | Settings → Icon set | `textures/items/name_tag` |
 | `performance` | Settings → Performance | `textures/items/clock_item` |
-| `bosses` | Main → Bosses | `textures/items/egg_null` |
-| `boss` | Each boss in the Bosses list | `textures/items/egg_null` |
-| `nearest_boss` | Main → Nearest boss | `textures/items/compass_item` |
-| `boss_info` | Nearest boss → info card | `textures/items/nether_star` |
-| `reset` | Nearest boss → Reset | `textures/items/totem` |
-| `despawn` | Nearest boss → Despawn | `textures/items/gunpowder` |
-| `phase_prev` | Nearest boss → Previous phase | `textures/items/repeater` |
-| `phase_next` | Nearest boss → Next phase | `textures/items/repeater` |
-| `skills` | Nearest boss → Skills | `textures/items/book_enchanted` |
+| `bosses` | Main → Spawn a boss | `textures/items/egg_null` |
+| `boss` | Each boss in the spawn list; unloaded bosses in the world list | `textures/items/egg_null` |
+| `nearest_boss` | Main → Bosses in world | `textures/items/compass_item` |
+| `boss_info` | Loaded bosses in the world list; boss → info card | `textures/items/nether_star` |
+| `reset` | Boss → Reset | `textures/items/totem` |
+| `despawn` | Boss → Despawn, Forget entry | `textures/items/gunpowder` |
+| `phase_prev` | Boss → Previous phase | `textures/items/repeater` |
+| `phase_next` | Boss → Next phase |
+| `teleport` | Boss → Teleport to boss | `textures/items/ender_pearl` | `textures/items/repeater` |
+| `skills` | Boss → Skills | `textures/items/book_enchanted` |
 | `skill` | Each skill in the Skills list | `textures/items/blaze_powder` |
 | `packs` | Main → Boss packs | `textures/blocks/chest_front` |
 | `pack` | Each connected boss pack | `textures/blocks/chest_front` |

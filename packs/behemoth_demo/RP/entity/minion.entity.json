@@ -1,0 +1,41 @@
+{
+  "format_version": "1.10.0",
+  "minecraft:client_entity": {
+    "description": {
+      "identifier": "bhm_demo:minion",
+      "materials": {
+        "default": "zombie"
+      },
+      "textures": {
+        "default": "textures/entity/zombie/husk"
+      },
+      "geometry": {
+        "default": "geometry.zombie.v1.8"
+      },
+      "scripts": {
+        "initialize": [
+          "variable.gliding_speed_value = 1.0;"
+        ],
+        "pre_animation": [
+          "variable.tcos0 = (math.cos(query.modified_distance_moved * 38.17) * query.modified_move_speed / variable.gliding_speed_value) * 57.3;"
+        ],
+        "scale": "0.9",
+        "animate": [
+          "look_at_target",
+          "move"
+        ]
+      },
+      "animations": {
+        "look_at_target": "animation.common.look_at_target",
+        "move": "animation.humanoid.move"
+      },
+      "render_controllers": [
+        "controller.render.default"
+      ],
+      "spawn_egg": {
+        "base_color": "#6b5a3a",
+        "overlay_color": "#b0122b"
+      }
+    }
+  }
+}

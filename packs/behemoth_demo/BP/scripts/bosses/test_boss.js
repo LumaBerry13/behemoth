@@ -74,7 +74,7 @@ export default {
       if: ["phase==2"],
       cooldown: 300,
       c: [
-        { m: "summon", o: { type: "minecraft:zombie", amount: 2, radius: 3, cap: 4 } },
+        { m: "summon", o: { type: "bhm_demo:minion", amount: 2, radius: 3, cap: 4 } },
         { m: "message", o: { text: "§7The Test Boss calls for help..." } },
       ],
     },

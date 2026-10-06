@@ -50,6 +50,8 @@ export class BossInstance {
     this.threat = new ThreatTable();
     /** @type {Set<string>} ids of summoned entities */
     this.summons = new Set();
+    /** @type {Set<string>} summons removed when this boss dies, despawns or resets (summon{bind}) */
+    this.boundSummons = new Set();
     /** While true the boss does not turn toward its target (MythicMobs lockmodel). */
     this.facingLocked = false;
     /** Movement speed multiplier applied to the entity's base movement. */
@@ -239,6 +241,7 @@ export class BossInstance {
    * @param {string} reason
    */
   reset(reason) {
+    this.services.bosses.releaseSummons(this);
     this.cancelAll();
     this.noPlayerTicks = 0;
     const h = Adapter.getHealth(this.entity);

@@ -356,5 +356,104 @@ console.log("\n15. /behemoth menu");
   player.remove();
 }
 
+/** Simulate /reload: framework memory gone, world storage kept, packs that still exist say hello. */
+function reloadFramework({ helloFrom = [...reg.packs.keys()] } = {}) {
+  reg.packs.clear();
+  reg.owners.clear();
+  reg.requested.clear();
+  services.bosses.configs.clear();
+  for (const b of services.bosses.all()) { b.destroy(); services.bosses.instances.delete(b.id); }
+  reg.cacheLoaded = false;
+  reg.restoreCache();
+  return helloFrom;
+}
+
+console.log("\n16. a removed boss pack disappears after reload (entity type gone)");
+{
+  const ui = await import("./ui_stub.mjs");
+  const before = [...services.bosses.configs.keys()];
+  const victim = before.find((t) => t !== "bhm_demo:test_boss" && t !== "bhm_demo:minion") ?? "bhm_demo:test_boss";
+  mc.sim.missingTypes.add(victim);
+  reloadFramework();
+  check(`${victim} is not registered after its pack was removed`, !services.bosses.configs.has(victim));
+  const index = JSON.parse(mc.world.dyn["bhm:cache"] ?? "{}");
+  const packOf = Object.entries(index).find(([, e]) => e.bosses.includes(victim));
+  check("its cache entry was deleted", !packOf);
+  // Menu: the spawn list must not offer it.
+  const player = new mc.Player("Admin2", dim, { x: 0, y: 64, z: 0 });
+  const start = ui.shown.length;
+  ui.clicks.push(29); // Spawn a boss
+  commands.get("bhm:behemoth")({ sourceEntity: player });
+  for (let i = 0; i < 5; i++) { await mc.flush(); mc.tick(1); }
+  const spawnPage = ui.shown.slice(start)[1];
+  const names = (spawnPage?.buttons ?? []).map((b) => JSON.stringify(b.text));
+  check("spawn list does not offer it", spawnPage && !names.some((t) => t.includes(victim)));
+  player.remove();
+  mc.sim.missingTypes.delete(victim);
+  reg.cacheLoaded = false;
+  mc.system.sendScriptEvent("bhm:ready", JSON.stringify({ p: 1, fw: "0.2.0" }));
+  for (let i = 0; i < 40 && services.bosses.configs.size < before.length; i++) { await mc.flush(); mc.tick(1); }
+}
+
+console.log("\n17. a cached pack that never says hello is unloaded after the grace period");
+{
+  // Fake a cached pack whose types exist but whose scripts don't run.
+  const payload = JSON.stringify({ ver: "1.0.0", bosses: [{ schemaVersion: 1, id: "ghost:boss", skills: { idle: { m: "delay", o: { ticks: 1 } } } }] });
+  const index = JSON.parse(mc.world.dyn["bhm:cache"] ?? "{}");
+  index.ghost_pack = { hash: fnv1a(payload), ver: "1.0.0", parts: 1, bosses: ["ghost:boss"] };
+  mc.world.dyn["bhm:cache"] = JSON.stringify(index);
+  mc.world.dyn["bhm:cache:ghost_pack:0"] = payload;
+  reg.cacheLoaded = false;
+  reg.restoreCache();
+  check("restored from cache at load", services.bosses.configs.has("ghost:boss"));
+  for (const [name, info] of reg.packs) if (name !== "ghost_pack") info.seen = true; // the real packs said hello
+  reg.forgetSilentPacks(); // runs 100 ticks after bhm:ready in the game
+  check("unloaded when it never said hello", !services.bosses.configs.has("ghost:boss") && !reg.packs.has("ghost_pack"));
+  check("cache entry removed", !JSON.parse(mc.world.dyn["bhm:cache"]).ghost_pack && mc.world.dyn["bhm:cache:ghost_pack:0"] === undefined);
+}
+
+console.log("\n18. minions: summoned, driven, hidden from the boss lists, removed with their boss");
+{
+  clearWorld();
+  if (!services.bosses.configs.has("bhm_demo:minion")) check("skipped (demo pack not loaded)", true);
+  else {
+    const player = new mc.Player("P", dim, { x: 0, y: 64, z: 4 });
+    const e = new mc.Entity("bhm_demo:test_boss", dim, { x: 0, y: 64, z: 0 }, { health: 300, height: 3, speed: 0.25 });
+    mc.world.afterEvents.entitySpawn.fire({ entity: e, cause: "Spawned" });
+    mc.tick(1);
+    const boss = services.bosses.get(e.id);
+    services.executor.castByName(boss, "summon_adds", {}, { force: true });
+    mc.tick(2);
+    const minions = services.bosses.all().filter((b) => b.config.id === "bhm_demo:minion");
+    check("two minions summoned and driven by the framework", minions.length === 2);
+    check("bound to their boss", boss.boundSummons.size === 2);
+    const list = services.bosses.worldList(dim, player.location);
+    check("world boss list shows the boss but no minions", list.some((x) => x.id === boss.id) && !list.some((x) => x.type === "bhm_demo:minion"));
+    check("nearest() never returns a minion", services.bosses.nearest(dim, minions[0].location, 1)?.config.kind !== "minion");
+    e.applyDamage(1000, { cause: "entityAttack", damagingEntity: player });
+    mc.tick(2);
+    check("minions removed when the boss dies", minions.every((m) => !m.entity.isValid));
+    check("boss dropped from the world list", !services.bosses.known.has(boss.id));
+    player.remove();
+  }
+}
+
+console.log("\n19. bosses in world: nearest first, teleport from the menu");
+{
+  clearWorld();
+  const ui = await import("./ui_stub.mjs");
+  const near = spawnBoss(10, 0);
+  const far = spawnBoss(100, 0);
+  const admin = new mc.Player("Admin3", dim, { x: 0, y: 64, z: 0 });
+  const list = services.bosses.worldList(dim, admin.location);
+  check("sorted nearest to farthest", list[0]?.id === near.e.id && list[1]?.id === far.e.id);
+  check("known list persisted", (mc.tick(60), typeof mc.world.dyn["bhm:known"] === "string"));
+  ui.clicks.push(31, 11, 31); // Bosses in world → 2nd entry (far) → Teleport
+  commands.get("bhm:behemoth")({ sourceEntity: admin });
+  for (let i = 0; i < 6; i++) { await mc.flush(); mc.tick(1); }
+  check("teleported next to the far boss", Math.abs(admin.location.x - 103) < 0.5, `x=${admin.location.x}`);
+  admin.remove();
+}
+
 console.log(failures ? `\n[scenarios] ${failures} FAILED` : "\n[scenarios] all passed");
 process.exit(failures ? 1 : 0);

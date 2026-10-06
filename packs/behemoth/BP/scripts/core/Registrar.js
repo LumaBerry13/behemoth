@@ -21,8 +21,13 @@ const CACHE_INDEX = "bhm:cache";
 const CACHE_PART = (pack, i) => `bhm:cache:${pack}:${i}`;
 /** World dynamic property strings are capped (≈32 KB [VERIFY]); stay well below. */
 const CACHE_PART_SIZE = 30000;
-/** Cached packs that never say hello this long after startup lose their cache entry. */
-const PRUNE_AFTER_TICKS = 1200;
+/**
+ * Packs restored from cache must say hello within this many ticks of our
+ * bhm:ready (connectors answer in 1–2 ticks); otherwise the pack is treated as
+ * removed: its bosses are unloaded and its cache entry deleted. A slow pack that
+ * says hello later is simply re-transferred.
+ */
+const HELLO_GRACE_TICKS = 100;
 /** An unfinished transfer is dropped after this many ticks without new parts. */
 const TRANSFER_TIMEOUT_TICKS = 200;
 const PACK_ID = /^[a-z0-9_.:-]{1,64}$/;
@@ -98,7 +103,7 @@ export class Registrar {
       this.restoreCache();
       this.send("bhm:ready", { p: PROTOCOL, fw: this.version });
     });
-    sched.after(PRUNE_AFTER_TICKS, () => this.pruneCache());
+    sched.after(1 + HELLO_GRACE_TICKS, () => this.forgetSilentPacks());
     sched.onTick((tick) => {
       if (tick % 20 === 0) this.expireTransfers(tick);
     });
@@ -233,11 +238,17 @@ export class Registrar {
     }
     /** @type {PackInfo} */
     const info = { pack, ver: String(data.ver ?? "?"), hash, source, bosses: [], errors: [], seen: source === "transfer" };
+    let missing = 0;
     for (const config of Array.isArray(data.bosses) ? data.bosses : []) {
       const id = config?.id;
       const owner = id ? this.owners.get(id) : undefined;
       if (owner && owner !== pack) {
         info.errors.push(`${id} is already provided by pack ${owner}; skipped`);
+        continue;
+      }
+      if (id && !Adapter.entityTypeExists(id)) {
+        missing++;
+        info.errors.push(`${id}: entity type not found (is the pack's entity file present and enabled?)`);
         continue;
       }
       try {
@@ -254,6 +265,12 @@ export class Registrar {
       this.owners.set(compiled.config.id, pack);
       this.services.bosses.register(compiled);
       info.bosses.push(compiled.config.id);
+    }
+    if (source === "cache" && info.bosses.length === 0 && missing > 0) {
+      // The pack's entities are gone: it was removed from the world.
+      this.deleteCacheEntry(pack);
+      Log.info(`pack ${pack} is no longer installed; dropped its cached bosses`);
+      return undefined;
     }
     // Types the previous version of this pack had but this one dropped.
     const before = this.packs.get(pack);
@@ -322,18 +339,31 @@ export class Registrar {
     }
   }
 
-  /** Remove cache entries for packs that did not say hello this session (uninstalled). */
-  pruneCache() {
+  /** @private @param {string} pack */
+  deleteCacheEntry(pack) {
     const index = this.readIndex();
-    let changed = false;
-    for (const [pack, entry] of Object.entries(index)) {
-      if (this.packs.get(pack)?.seen) continue;
-      for (let i = 0; i < entry.parts; i++) Adapter.setWorldDynamic(CACHE_PART(pack, i), undefined);
-      delete index[pack];
-      changed = true;
-      Log.info(`pack ${pack} did not respond; removed its cached copy (its bosses stay loaded until the next reload)`);
+    const entry = index[pack];
+    if (!entry) return;
+    for (let i = 0; i < entry.parts; i++) Adapter.setWorldDynamic(CACHE_PART(pack, i), undefined);
+    delete index[pack];
+    Adapter.setWorldDynamic(CACHE_INDEX, JSON.stringify(index));
+  }
+
+  /**
+   * Packs restored from cache that never said hello are gone (removed from the
+   * world): unload their bosses, forget them and delete their cache entry.
+   */
+  forgetSilentPacks() {
+    for (const [pack, info] of [...this.packs]) {
+      if (info.seen) continue;
+      for (const id of info.bosses) {
+        this.owners.delete(id);
+        this.services.bosses.unregister(id);
+      }
+      this.packs.delete(pack);
+      this.deleteCacheEntry(pack);
+      Log.info(`pack ${pack} did not respond after loading; unloaded its ${info.bosses.length} boss(es) and removed its cache`);
     }
-    if (changed) Adapter.setWorldDynamic(CACHE_INDEX, JSON.stringify(index));
   }
 
   /** Forget every cached payload; packs re-send on their next hello (menu action). */

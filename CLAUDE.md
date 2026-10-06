@@ -84,7 +84,10 @@ Module contracts (typed in `types/config.d.ts`):
 
 - One custom command `bhm:behemoth` (operators, works without cheats) opens `ui/Menu.js` (chest UI via vendored Chest-UI, `adapter/Ui.js`, retries while the player is busy).
 - 54 slots, checkerboard border of gray/black glass (texture paths, never item ids), content in the 7×4 interior, controls on the bottom row (45 back, 48 prev, 49 close, 50 next).
-- Pages: Main (settings: overlay, log level, bone markers, hitbox preview, seeded RNG, icon set, performance), Bosses (spawn), Nearest boss (info, reset, despawn, phase ±, skills → cast), Boss packs, Diagnostics (script-event probe, clear cache, modules), About (credits).
+- Pages: Main (settings: overlay, log level, bone markers, hitbox preview, seeded RNG, icon set, performance), Spawn a boss (kind boss only), Bosses in world (nearest first, incl. unloaded ones from `bhm:known`; detail: info, reset, despawn, phase ±, teleport, skills → cast), Boss packs, Diagnostics (script-event probe, clear cache, modules), About (credits).
+- Config `kind`: `"boss"` (default) or `"minion"`. Minions run like bosses but never appear in the menu's boss lists or `nearest()`. `summon{bind}` (default true) binds summons to their boss (`boundSummons`, persisted); they are removed when the boss dies, despawns or resets.
+- Removed packs: `install()` skips configs whose entity type no longer exists (`EntityTypes.get`); a cached pack with none left loses its cache entry; cached packs that never say hello within 100 ticks of `bhm:ready` are unloaded and their cache deleted (`forgetSilentPacks`).
+- Known bosses: world property `bhm:known` (id → type, name, dim, xyz) so the menu lists unloaded bosses too; pruned when the type is gone.
 - Settings persist in world property `bhm:settings` (`core/Settings.js`), applied on load (log level, RNG seed). Icons: `ui/icons.js` (vanilla fallbacks verified against the 1.26 texture index; custom set = `RP/textures/behemoth/ui/<key>.png`, list in `docs/menu-icons.md`).
 - Chest-UI is CC BY 4.0: keep `THIRD_PARTY_NOTICES.md` and the vendored LICENSE/README.
 
@@ -144,8 +147,8 @@ Every boss entity JSON must contain:
 
 ## Milestones (design doc §14)
 
-- **M1, M2 (done, tested in-game).** **M3:** mostly done (missing: Blockbench timeline markers, `q.anim_time`-only Molang).
-- **M4 (current):** v1 modules ✅, reset/leash ✅, library split + protocol + menu ✅ (tested in-game 2026-10-06), shared particle library, weak-point raycast (v1.1).
+- **M0, M1, M2 (done, tested in-game).** **M3:** mostly done (missing: Blockbench timeline markers, `q.anim_time`-only Molang).
+- **M4 (current):** v1 modules ✅, reset/leash ✅, library split + protocol + menu ✅ (tested in-game 2026-10-06), minions + removed-pack handling ✅, shared particle library, weak-point raycast (v1.1).
 - **M5:** 2–3 converted bosses end to end; set CPU budget; tag v1.
 
 ## Owner & workflow

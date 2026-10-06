@@ -23,6 +23,13 @@ export class BossManager {
     this.instances = new Map();
     /** True once the world is loaded and the first scan ran. */
     this.started = false;
+    /**
+     * Every boss (kind "boss") known to be in the world, loaded or not, persisted in
+     * the world property "bhm:known" so the menu can list and teleport to them.
+     * @type {Map<string, { type: string, name: string, dim: string, x: number, y: number, z: number }>}
+     */
+    this.known = new Map();
+    this.knownDirty = false;
     /** @type {Map<string, number>} summoned entity id → framework tick to remove it */
     this.temporaries = new Map();
     /**
@@ -52,13 +59,89 @@ export class BossManager {
     if (this.started) this.scanType(id);
   }
 
-  /** Stop driving a boss type (its pack dropped it). @param {string} typeId */
+  /** Stop driving a boss type (its pack dropped it or was removed). @param {string} typeId */
   unregister(typeId) {
     this.configs.delete(typeId);
     for (const boss of this.all().filter((b) => b.config.id === typeId)) {
       boss.destroy();
       this.instances.delete(boss.id);
     }
+    for (const [id, k] of this.known) {
+      if (k.type === typeId) this.forget(id);
+    }
+  }
+
+  /** @param {CompiledBoss | BossInstance} c */
+  static isBoss(c) {
+    return (c.config.kind ?? "boss") === "boss";
+  }
+
+  // -------------------------------------------------------------------------
+  // Known bosses (world-wide list for the menu)
+  // -------------------------------------------------------------------------
+  /** @private */
+  loadKnown() {
+    try {
+      const raw = Adapter.getWorldDynamic("bhm:known");
+      if (typeof raw === "string") this.known = new Map(Object.entries(JSON.parse(raw)));
+      // Drop bosses whose pack was removed (their entity type no longer exists).
+      for (const [id, k] of this.known) if (!Adapter.entityTypeExists(k.type)) this.forget(id);
+    } catch {
+      this.known = new Map();
+    }
+  }
+
+  /** @private @param {BossInstance} boss */
+  track(boss) {
+    if (!BossManager.isBoss(boss) || boss.dead || !boss.entity.isValid) return;
+    const l = boss.location;
+    const prev = this.known.get(boss.id);
+    const entry = {
+      type: boss.config.id, name: boss.config.display?.name ?? boss.config.id, dim: boss.dimension.id,
+      x: Math.round(l.x * 10) / 10, y: Math.round(l.y * 10) / 10, z: Math.round(l.z * 10) / 10,
+    };
+    if (!prev || prev.x !== entry.x || prev.y !== entry.y || prev.z !== entry.z || prev.dim !== entry.dim) {
+      this.known.set(boss.id, entry);
+      this.knownDirty = true;
+    }
+  }
+
+  /** Remove a boss from the world list (died, despawned, or confirmed gone). @param {string} id */
+  forget(id) {
+    if (this.known.delete(id)) this.knownDirty = true;
+  }
+
+  /** @private */
+  flushKnown() {
+    if (!this.knownDirty) return;
+    this.knownDirty = false;
+    try {
+      Adapter.setWorldDynamic("bhm:known", this.known.size ? JSON.stringify(Object.fromEntries(this.known)) : undefined);
+    } catch (e) {
+      Log.warn("could not save the boss list:", e);
+    }
+  }
+
+  /**
+   * Bosses for the menu, nearest first: loaded ones (same dimension first), then
+   * known-but-unloaded ones. Minions are never listed.
+   * @param {import("@minecraft/server").Dimension} dim @param {import("@minecraft/server").Vector3} loc
+   */
+  worldList(dim, loc) {
+    const out = [];
+    for (const b of this.instances.values()) {
+      if (b.dead || !BossManager.isBoss(b)) continue;
+      const l = b.location;
+      const same = b.dimension.id === dim.id;
+      out.push({ id: b.id, loaded: true, boss: b, name: b.config.display?.name ?? b.config.id, type: b.config.id,
+        dim: b.dimension.id, x: l.x, y: l.y, z: l.z, dist: same ? Math.hypot(l.x - loc.x, l.y - loc.y, l.z - loc.z) : Infinity });
+    }
+    for (const [id, k] of this.known) {
+      if (this.instances.has(id) || !this.configs.has(k.type)) continue;
+      out.push({ id, loaded: false, boss: undefined, name: k.name, type: k.type, dim: k.dim, x: k.x, y: k.y, z: k.z,
+        dist: k.dim === dim.id ? Math.hypot(k.x - loc.x, k.y - loc.y, k.z - loc.z) : Infinity });
+    }
+    return out.sort((a, b) => (a.loaded === b.loaded ? a.dist - b.dist : a.loaded ? -1 : 1));
   }
 
   /** Subscribe to events and start ticking. Bosses are registered later by boss packs. */
@@ -68,6 +151,7 @@ export class BossManager {
     // Bosses already loaded when scripts (re)load never fire entityLoad.
     this.services.scheduler.after(1, () => {
       this.started = true;
+      this.loadKnown();
       this.restoreSavedBlocks();
       this.scanLoaded();
     });
@@ -161,6 +245,7 @@ export class BossManager {
     const now = this.services.scheduler.tick;
     const saved = Persistence.load(entity);
     this.instances.set(entity.id, boss);
+    this.track(boss);
 
     if (saved) {
       Persistence.apply(boss, saved, now);
@@ -209,6 +294,7 @@ export class BossManager {
 
   /** @private @param {number} tick */
   tickAll(tick) {
+    if (tick % 100 === 50) this.flushKnown();
     if (tick % 10 === 0) {
       this.sweepTemporaries(tick);
       this.sweepBlocks(tick);
@@ -222,7 +308,10 @@ export class BossManager {
         continue;
       }
       boss.tick();
-      if (boss.age % SAVE_INTERVAL_TICKS === 0) Persistence.save(boss, tick);
+      if (boss.age % SAVE_INTERVAL_TICKS === 0) {
+        Persistence.save(boss, tick);
+        this.track(boss);
+      }
     }
   }
 
@@ -239,6 +328,8 @@ export class BossManager {
     boss.dead = true;
     boss.cancelAll();
     this.instances.delete(boss.id);
+    this.forget(boss.id);
+    this.releaseSummons(boss);
     if (boss.entity.isValid) {
       // Custom-death bosses stay in the world while their death animation plays:
       // stop AI and movement, and make sure a reload never re-arms them.
@@ -349,9 +440,30 @@ export class BossManager {
 
   /** Remove a boss without drops or death skills. @param {BossInstance} boss */
   despawn(boss) {
+    this.releaseSummons(boss);
     boss.destroy();
     this.instances.delete(boss.id);
+    this.forget(boss.id);
     Adapter.triggerEvent(boss.entity, "bhm:despawn");
+  }
+
+  /**
+   * Remove the entities a boss summoned with summon{bind} (default): its minions
+   * don't outlive it (death, despawn, reset).
+   * @param {BossInstance} boss
+   */
+  releaseSummons(boss) {
+    for (const id of boss.boundSummons) {
+      const e = Adapter.getEntity(id);
+      if (!e) continue;
+      const minion = this.instances.get(id);
+      if (minion) {
+        minion.destroy();
+        this.instances.delete(id);
+      }
+      Adapter.remove(e);
+    }
+    boss.boundSummons.clear();
   }
 
   /**
@@ -379,7 +491,7 @@ export class BossManager {
     let best;
     let bestD = range;
     for (const b of this.instances.values()) {
-      if (b.dead || b.dimension.id !== dim.id) continue;
+      if (b.dead || b.dimension.id !== dim.id || !BossManager.isBoss(b)) continue;
       const l = b.location;
       const d = Math.hypot(l.x - loc.x, l.y - loc.y, l.z - loc.z);
       if (d <= bestD) {

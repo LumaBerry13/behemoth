@@ -19,6 +19,7 @@ const VERSION = 1;
  *   threat?: Record<string, number>,
  *   facing?: boolean,
  *   speed?: number,
+ *   bound?: string[],
  * }} SavedState
  */
 
@@ -40,6 +41,7 @@ export const Persistence = {
       threat: boss.config.threat?.enabled === false ? undefined : boss.threat.serialize(),
       facing: boss.facingLocked,
       speed: boss.speedMult,
+      bound: [...boss.boundSummons],
     };
     try {
       Adapter.setDynamic(boss.entity, KEY, JSON.stringify(state));
@@ -77,6 +79,7 @@ export const Persistence = {
     boss.threat.restore(state.threat);
     boss.facingLocked = !!state.facing;
     boss.speedMult = state.speed ?? 1;
+    boss.boundSummons = new Set(state.bound ?? []);
   },
 
   /** Mark an entity whose death is still playing out, so it is never re-armed on reload. @param {import("@minecraft/server").Entity} entity */

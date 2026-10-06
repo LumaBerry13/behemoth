@@ -178,7 +178,14 @@ const timeouts = new Map();
 let outbox = [];
 
 /** Engine message-size limit modelled by the sim ([VERIFY] real value; see /behemoth → Diagnostics). */
-export const sim = { scriptEventLimit: Number(process.env.BHM_SIM_MSG_LIMIT ?? 2048), scriptEventsSent: 0, scriptEventChars: 0 };
+export const sim = { scriptEventLimit: Number(process.env.BHM_SIM_MSG_LIMIT ?? 2048), scriptEventsSent: 0, scriptEventChars: 0,
+  /** Entity types treated as not installed (a removed pack). */
+  missingTypes: new Set() };
+
+export const EntityTypes = {
+  get: (id) => (sim.missingTypes.has(id) ? undefined : { id }),
+  getAll: () => [],
+};
 
 export const system = {
   currentTick: 0,
