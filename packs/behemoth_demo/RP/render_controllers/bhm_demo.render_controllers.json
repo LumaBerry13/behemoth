@@ -17,6 +17,28 @@
         "b": "math.mod(q.property('bhm:tint'), 256) / 255",
         "a": "q.property('bhm:tint') == 16777215 ? 0.0 : 0.6"
       }
+    },
+    "controller.render.bhm_demo.test_boss": {
+      "geometry": "Geometry.default",
+      "materials": [
+        {
+          "*": "Material.default"
+        }
+      ],
+      "textures": [
+        "Texture.default"
+      ],
+      "part_visibility": [
+        {
+          "*": true
+        },
+        {
+          "head": "math.mod(math.floor(q.property('bhm:hidden_parts') / 1), 2) < 1"
+        },
+        {
+          "rightArm": "math.mod(math.floor(q.property('bhm:hidden_parts') / 2), 2) < 1"
+        }
+      ]
     }
   }
 }

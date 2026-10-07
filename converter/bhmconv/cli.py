@@ -24,6 +24,12 @@ files and the per-boss mappings:
   "blades": ["<bone>"],  # weapon bones: hits use a hilt->tip capsule, summons land at the tip
   "particles": { "<java particle>": "<bedrock particle id>" },
   "bullets": { "<bulletModel | bulletMaterial>": "<entity id>" },  # projectile models flown by the framework
+  "pack_icon": "icon.png",      # copied into both packs
+  "link_all_animations": true,  # also register animations the client entity does not list (Blockbench exports)
+  "always_animate": ["passive"],  # looping layer animations the RP always plays (ModelEngine priority layers)
+  "sound_files": { "folder": "sounds", "event_prefix": "littleroom.boss", "mm_namespace": "littleroom_boss" },
+                         # .ogg files → RP sounds + sound_definitions.json; growl_1.ogg, growl_2.ogg → event
+                         # "<event_prefix>.growl"; MythicMobs "<mm_namespace>:<event>" sounds map to them
   "minions": [           # other mobs of this pack converted alongside (minions, effect entities)
     { "boss": "candle", "mob": "<mm mob>", "behavior": "...", "client_entity": "...", "geometry": "...",
       "animations": [], "textures": {}, "identifier": "optional:override" }   # summons of it map automatically
@@ -37,8 +43,10 @@ files and the per-boss mappings:
     "randomskill_mode": "available",       # mode for every randomSkill line
     "trigger_overrides": { "<metaskill>": "onTimer:10" },   # mob lines calling it
     "extra_lines_enabled": true,           # false keeps extra_lines in the job but doesn't apply them
-    "extra_lines": { "<metaskill>": [ { "m": "cameraShake", "o": {}, "delay": 20 } ] }
+    "extra_lines": { "<metaskill>": [ { "m": "cameraShake", "o": {}, "delay": 20 } ] },
                                            # added at the START of that skill; time them with `delay`
+    "option_overrides": { "<metaskill>": { "<mechanic>": { "<option>": 0 } } }
+                                           # change options of that mechanic's lines in that skill
   }
 }
 
@@ -67,11 +75,11 @@ FRAMEWORK = json.loads((REPO / "connector" / "framework.json").read_text(encodin
 MARKER = ".bhmconv-output"
 from .bake import Skeleton, bake_animation, rest_position
 from .entity import (
-    build_base_controller, build_tint_controller, death_duration_ticks, find_death_event, movement_speed, patch_behavior,
-    patch_client_entity,
+    build_base_controller, build_render_controller, death_duration_ticks, find_death_event, movement_speed, patch_behavior,
+    patch_client_entity, render_controller_id,
 )
 from .jsout import Raw, inline, pretty, track_compact
-from .mythic import Context, translate_boss
+from .mythic import Context, parse_skill_line, translate_boss
 
 
 def _load_json(p: Path) -> dict:
@@ -178,7 +186,8 @@ def convert(job_path: Path, out: Path | None = None) -> Path:
     mob_types = {sp["mob"]: {"type": _entity_id(sp, src)} for sp in specs[1:]}
     mob_types.update(job.get("mob_types", {}))
 
-    built = [build_entity(spec, job, src, out, mobs, skills, mob_types) for spec in specs]
+    sounds = build_sounds(job, src, out, notes)
+    built = [build_entity(spec, job, src, out, mobs, skills, mob_types, sounds) for spec in specs]
     main = built[0]
     for b in built:
         notes += [f"[{b['boss']}] {n}" for n in b["notes"]] if len(built) > 1 else b["notes"]
@@ -201,6 +210,9 @@ def convert(job_path: Path, out: Path | None = None) -> Path:
     bp_manifest, rp_manifest = _manifests(pack, main["display"])
     _write(out / "BP" / "manifest.json", json.dumps(bp_manifest, indent=2) + "\n")
     _write(out / "RP" / "manifest.json", json.dumps(rp_manifest, indent=2) + "\n")
+    if job.get("pack_icon"):
+        for side in ("BP", "RP"):
+            shutil.copyfile(src / job["pack_icon"], _mk(out / side / "pack_icon.png"))
     rp = out / "RP"
     _write(rp / "texts" / "en_US.lang", "".join(
         f"entity.{b['entity_id']}.name={b['display']}\nitem.spawn_egg.entity.{b['entity_id']}.name=Spawn {b['display']}\n"
@@ -230,7 +242,79 @@ def convert(job_path: Path, out: Path | None = None) -> Path:
     return report
 
 
-def build_entity(spec: dict, job: dict, src: Path, out: Path, mobs: dict, skills: dict, mob_types: dict) -> dict:
+def build_sounds(job: dict, src: Path, out: Path, notes: list[str]) -> dict[str, str]:
+    """Job `sound_files`: copy the .ogg files into the RP and write sound_definitions.json. Files that
+    differ only by a trailing _N are variants of one event. Returns MythicMobs sound id → Bedrock event."""
+    sf = job.get("sound_files")
+    if not sf:
+        return {}
+    folder = src / sf["folder"]
+    prefix = sf["event_prefix"]
+    ns = sf.get("mm_namespace")
+    dest = f"sounds/{sf.get('dest', job['boss'])}"
+    groups: dict[str, list[Path]] = {}
+    for f in sorted(folder.glob("*.ogg")):
+        groups.setdefault(re.sub(r"_\d+$", "", f.stem), []).append(f)
+    defs, mapping = {}, {}
+    for stem, files in groups.items():
+        event = f"{prefix}.{stem}"
+        for f in files:
+            shutil.copyfile(f, _mk(out / "RP" / dest / f.name))
+        defs[event] = {"category": "hostile", "max_distance": 48.0,
+                       "sounds": [{"name": f"{dest}/{f.stem}", "load_on_low_memory": True} for f in files]}
+        mapping[event] = event
+        if ns:
+            mapping[f"{ns}:{event}"] = event
+    _write(out / "RP" / "sounds" / "sound_definitions.json",
+           json.dumps({"format_version": "1.14.0", "sound_definitions": defs}, indent=2))
+    notes.append(f"sounds: {sum(len(f) for f in groups.values())} files → {len(defs)} events ({', '.join(sorted(defs))})")
+    return mapping
+
+
+def _animation_hooks(anim_file: dict, skills: dict, ctx: Context, notes: list[str], tag: str) -> dict[str, str]:
+    """ModelEngine script keyframes (timeline "mm:SKILL;") cannot run on Bedrock. Skills made only of
+    sounds become animation sound_effects (client side); everything else is removed and reported.
+    Returns effect name → sound event for the client entity's sound_effects."""
+    effects: dict[str, str] = {}
+    for anim_id, anim in anim_file.get("animations", {}).items():
+        tl = anim.get("timeline")
+        if not isinstance(tl, dict):
+            continue
+        for time, value in list(tl.items()):
+            entries = value if isinstance(value, list) else [value]
+            kept = []
+            for entry in entries:
+                parts = [x.strip() for x in str(entry).split(";") if x.strip()]
+                rest = []
+                for part in parts:
+                    if not part.lower().startswith("mm:"):
+                        rest.append(part)
+                        continue
+                    name = part[3:].strip()
+                    lines = [parse_skill_line(str(r)) for r in (skills.get(name) or {}).get("Skills") or []]
+                    if lines and all(sl.mechanic.lower() == "sound" for sl in lines):
+                        mm = str(lines[0].options.get("s", lines[0].options.get("sound", "")))
+                        event = ctx.sounds.get(mm) or ctx.sounds.get(mm.split(":", 1)[-1]) or mm.split(":", 1)[-1]
+                        key = name.lower()
+                        effects[key] = event
+                        anim.setdefault("sound_effects", {})[time] = {"effect": key}
+                    else:
+                        notes.append(f"{tag}: {anim_id} keyframe script mm:{name} at {time}s dropped (only sound-only skills can run from an animation)")
+                if rest:
+                    kept.append("; ".join(rest) + ";")
+            if kept:
+                tl[time] = kept if isinstance(value, list) else kept[0]
+            else:
+                del tl[time]
+        if not tl:
+            anim.pop("timeline", None)
+    if effects:
+        notes.append(f"{tag}: keyframe sounds {', '.join(sorted(effects))} play from the animations (client side)")
+    return effects
+
+
+def build_entity(spec: dict, job: dict, src: Path, out: Path, mobs: dict, skills: dict, mob_types: dict,
+                 sounds: dict[str, str] | None = None) -> dict:
     """Convert one MythicMobs mob + its Bedrock entity files into config, generated data and entity files."""
     boss = spec["boss"]
     kind = spec.get("kind", "boss")
@@ -245,7 +329,22 @@ def build_entity(spec: dict, job: dict, src: Path, out: Path, mobs: dict, skills
     all_anims = {}
     for f in anim_files:
         all_anims.update(f.get("animations", {}))
+    if spec.get("link_all_animations", job.get("link_all_animations")):
+        linked = set(client_anims.values())
+        for full in all_anims:
+            if full in linked:
+                continue
+            key = full.rsplit(".", 1)[-1]
+            while key in client_anims:
+                key += "_"
+            client_anims[key] = full
+            notes.append(f"client entity: linked animation `{key}` ({full})")
+        client["minecraft:client_entity"]["description"]["animations"] = client_anims
     action_anims = {k: v for k, v in client_anims.items() if v in all_anims}
+    always = list(spec.get("always_animate", job.get("always_animate", []) if kind == "boss" else []))
+    for a in always:
+        if a not in action_anims:
+            raise SystemExit(f"always_animate: '{a}' is not an animation of {spec['boss']}")
     skel = Skeleton.from_geo(geo, client["minecraft:client_entity"]["description"].get("geometry", {}).get("default"))
 
     # ---------------- YAML → config ----------------
@@ -253,12 +352,14 @@ def build_entity(spec: dict, job: dict, src: Path, out: Path, mobs: dict, skills
         anims=set(action_anims),
         bones=set(skel.bones),
         mob_types=mob_types,
-        sounds=job.get("sounds", {}),
+        sounds={**(sounds or {}), **job.get("sounds", {})},
         bone_aliases=spec.get("bone_aliases", {}),
         blades=set(spec.get("blades", [])),
         particles=job.get("particles", {}),
         bullets=job.get("bullets", {}),
+        mm_mobs=set(mobs),
     )
+    ctx.always = set(always)
     ctx.base_states["idle"].append("idle") if "idle" in action_anims else None
     ctx.base_states["walk"].append("walk") if "walk" in action_anims else None
     tb = translate_boss(spec["mob"], mobs[spec["mob"]], skills, ctx)
@@ -338,6 +439,7 @@ def build_entity(spec: dict, job: dict, src: Path, out: Path, mobs: dict, skills
                   **({"ignoreDifficulty": True} if tuning.get("ignore_difficulty") else {})},
         **({"invulnerable": True} if tb["invincible"] else {}),
         **({"variables": tb["variables"]} if tb["variables"] else {}),
+        **({"parts": ctx.parts} if ctx.parts else {}),
         "animations": Raw("anims"),
         "restPose": Raw("rest"),
         "baseStates": ctx.base_states,
@@ -358,18 +460,22 @@ def build_entity(spec: dict, job: dict, src: Path, out: Path, mobs: dict, skills
     idle, walk = ctx.base_states["idle"], ctx.base_states["walk"]
     ident_override = spec.get("identifier")
     bp_entity = patch_behavior(behavior, len(idle), len(walk), tb["bossBarRange"], notes, tb["display"],
-                               kind=kind, identifier=ident_override, tint=ctx.uses_tint)
+                               kind=kind, identifier=ident_override, tint=ctx.uses_tint, parts=len(ctx.parts))
     _write(out / "BP" / "entities" / f"{boss}.json", json.dumps(bp_entity, indent=2))
     rp = out / "RP"
+    sound_effects: dict[str, str] = {}
+    for f, data in zip(anim_names, anim_files):
+        sound_effects.update(_animation_hooks(data, skills, ctx, notes, Path(f).name))
+        _write(rp / "animations" / Path(f).name, json.dumps(data, indent=2))
     _write(rp / "entity" / f"{boss}.entity.json",
-           json.dumps(patch_client_entity(client, boss, notes, identifier=ident_override, tint=ctx.uses_tint), indent=2))
-    if ctx.uses_tint:
-        _write(rp / "render_controllers" / f"{boss}.bhm_tint.render_controllers.json", json.dumps(build_tint_controller(boss), indent=2))
+           json.dumps(patch_client_entity(client, boss, notes, identifier=ident_override, tint=ctx.uses_tint,
+                                          parts=ctx.parts, always=always, sound_effects=sound_effects), indent=2))
+    if ctx.uses_tint or ctx.parts:
+        _write(rp / "render_controllers" / f"{boss}.bhm.render_controllers.json",
+               json.dumps(build_render_controller(boss, ctx.uses_tint, ctx.parts), indent=2))
     _write(rp / "animation_controllers" / f"{boss}.bhm_base.animation_controller.json",
            json.dumps(build_base_controller(boss, idle, walk), indent=2))
     shutil.copyfile(src / spec["geometry"], _mk(rp / "models" / "entity" / Path(spec["geometry"]).name))
-    for f in anim_names:
-        shutil.copyfile(src / f, _mk(rp / "animations" / Path(f).name))
     for f in spec.get("animation_controllers", []):
         shutil.copyfile(src / f, _mk(rp / "animation_controllers" / Path(f).name))
     for f, dest in spec.get("textures", {}).items():
@@ -395,6 +501,15 @@ def apply_tuning(skills: dict, tuning: dict, ctx: Context, notes: list[str]) -> 
             skills[k]["tr"] = tr
         if not hit:
             notes.append(f"tuning: trigger override for '{target}' matched no mob skill line")
+    for target, by_mech in tuning.get("option_overrides", {}).items():
+        sk = skills.get(target)
+        if not sk:
+            notes.append(f"tuning: option overrides for unknown skill '{target}' ignored")
+            continue
+        for line in [sk] + list(sk.get("c", [])):
+            if line.get("m") in by_mech:
+                line.setdefault("o", {}).update(by_mech[line["m"]])
+                notes.append(f"tuning: {target} {line['m']} options {by_mech[line['m']]}")
     if tuning.get("extra_lines_enabled", True) is False:
         if tuning.get("extra_lines"):
             notes.append(f"tuning: extra_lines disabled (extra_lines_enabled=false); {len(tuning['extra_lines'])} skill(s) left unchanged")

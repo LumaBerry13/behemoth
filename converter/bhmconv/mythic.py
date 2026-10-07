@@ -199,7 +199,10 @@ MM_PARTICLES = {
     "dripwater": "minecraft:water_drip_particle", "spell": "minecraft:mobspell_emitter",
     "witch": "minecraft:witchspell_emitter", "snowball": "minecraft:snowflake_particle",
     "end_rod": "minecraft:endrod", "totem": "minecraft:totem_particle", "sonic_boom": "minecraft:sonic_explosion",
-    "sweep_attack": "minecraft:critical_hit_emitter", "block_crack": "minecraft:basic_smoke_particle",
+    "sweep_attack": "minecraft:critical_hit_emitter", "block_crack": "bhm:dust", "block": "bhm:dust",
+    "blockcrack": "bhm:dust", "blockdust": "bhm:dust", "block_dust": "bhm:dust", "falling_dust": "bhm:dust",
+    "falling_obsidian_tear": "bhm:dust", "dripping_obsidian_tear": "bhm:dust", "ash": "bhm:dust", "white_ash": "bhm:dust",
+    "sculk_soul": "bhm:glow", "soul": "bhm:glow",
     "flash": "bhm:flash", "glow": "bhm:glow", "electric_spark": "bhm:spark", "wax_on": "bhm:spark",
 }
 DEFAULT_PARTICLE = "minecraft:basic_flame_particle"
@@ -209,6 +212,17 @@ MM_SHOOT_TYPES = {"ARROW": "minecraft:arrow", "SNOWBALL": "minecraft:snowball", 
                   "SMALL_FIREBALL": "minecraft:small_fireball", "FIREBALL": "minecraft:fireball",
                   "WITHER_SKULL": "minecraft:wither_skull", "TRIDENT": "minecraft:thrown_trident",
                   "DRAGON_FIREBALL": "minecraft:dragon_fireball", "SHULKER_BULLET": "minecraft:shulker_bullet"}
+
+# Java entity types a MythicMobs `summon{t=ZOMBIE}` may name (Bedrock uses the same ids). Any other
+# all-caps name is a MythicMobs mob from a file not given to the converter, never a vanilla type.
+VANILLA_MOBS = {
+    "zombie", "husk", "drowned", "skeleton", "stray", "wither_skeleton", "bogged", "spider", "cave_spider", "creeper",
+    "blaze", "vex", "silverfish", "endermite", "phantom", "wolf", "pig", "cow", "sheep", "chicken", "bat", "slime",
+    "magma_cube", "ghast", "enderman", "piglin", "piglin_brute", "zombified_piglin", "evoker", "vindicator", "pillager",
+    "ravager", "witch", "iron_golem", "snow_golem", "guardian", "elder_guardian", "shulker", "armor_stand",
+    "lightning_bolt", "tnt", "fireball", "small_fireball", "arrow", "bee", "fox", "polar_bear", "hoglin", "zoglin",
+    "strider", "warden", "allay", "breeze", "creaking", "goat", "frog", "llama", "horse", "rabbit", "cat", "parrot",
+}
 
 # Mechanics that only drive ModelEngine / Java behaviour — no Bedrock equivalent needed.
 SKIPPED_MECHANICS = {
@@ -243,6 +257,10 @@ class Context:
     used_mechanics: set[str] = field(default_factory=set)
     used_bones: set[str] = field(default_factory=set)
     uses_tint: bool = False
+    mm_mobs: set[str] = field(default_factory=set)  # every mob id in the MythicMobs YAML (never vanilla entity types)
+    always: set[str] = field(default_factory=set)  # job always_animate: looping layers played by the RP, not by skills
+    parts: list[str] = field(default_factory=list)  # bones hidden/shown by partVisibility (config.parts)
+    grab_durations: dict[str, int] = field(default_factory=dict)  # "<skill>[<line>]" → ticks a MountModel lasts
     base_states: dict[str, list[str]] = field(default_factory=lambda: {"idle": [], "walk": []})
     extra_skills: dict[str, Any] = field(default_factory=dict)  # generated from inline skill lists
 
@@ -302,14 +320,33 @@ def _mm_color(v: Any) -> str | None:
     return None
 
 
+# Default colours for MythicMobs particles mapped to bhm:dust (block particles by material).
+PARTICLE_COLORS = {"falling_obsidian_tear": "#8A2BE2", "dripping_obsidian_tear": "#8A2BE2", "ash": "#3A3A3A",
+                   "white_ash": "#D8D8D8", "sculk_soul": "#2AD4E0"}
+BLOCK_COLORS = {"crying_obsidian": "#5A1A8C", "obsidian": "#1A1028", "nether_wart": "#7A0E0E", "redstone_block": "#B00000",
+                "netherrack": "#6E2B2B", "stone": "#7A7A7A", "dirt": "#6B4A2F", "grass_block": "#5E8F3A", "sand": "#D9C98F",
+                "snow_block": "#F2F6F8", "ice": "#9CC3F0", "bone_block": "#E6E0C8", "soul_sand": "#4F3A2B", "blackstone": "#2A2329",
+                "gold_block": "#F2D23C", "magma_block": "#C2451C", "slime_block": "#6FC25B", "wither_rose": "#20201C"}
+MAX_PARTICLE_COUNT = 40
+
+
 def _particle_opts(ctx: "Context", o: dict[str, Any], where: str) -> dict[str, Any]:
     """`particle` plus the framework particle library options (colour, size) when the
     MythicMobs particle maps to a bhm:* particle (dust, dust_color_transition, ...)."""
+    mm_name = str(_opt(o, "particle", "p", default="flame")).lower().replace("minecraft:", "")
     pid = _particle(ctx, _opt(o, "particle", "p", default="flame"), where)
     out: dict[str, Any] = {"particle": pid}
     if not pid.startswith("bhm:"):
         return out
-    for key, mm in (("color", ("color", "c")), ("color2", ("color2", "tocolor", "c2"))):
+    material = str(_opt(o, "material", "m", "b", "block", default="")).lower().replace("minecraft:", "")
+    if material and material in BLOCK_COLORS:
+        out["color"] = BLOCK_COLORS[material]
+    elif material:
+        out["color"] = "#7A7A7A"
+        ctx.note(where, f"block particle material '{material}' drawn as grey dust (add it to BLOCK_COLORS)")
+    elif mm_name in PARTICLE_COLORS:
+        out["color"] = PARTICLE_COLORS[mm_name]
+    for key, mm in (("color", ("color", "color1", "c")), ("color2", ("color2", "tocolor", "c2"))):
         raw = _opt(o, *mm)
         if raw is None:
             continue
@@ -324,6 +361,23 @@ def _particle_opts(ctx: "Context", o: dict[str, Any], where: str) -> dict[str, A
     if isinstance(size, (int, float)) and size > 0 and pid in ("bhm:dust", "bhm:dust_transition", "bhm:glow", "bhm:spark"):
         out["size"] = round(float(size) * 0.1, 3)  # MythicMobs dust size 1 ≈ 0.1 blocks [VERIFY by eye]
     return out
+
+
+# ModelEngine bone name prefixes (head, mount seat, hitbox, ...): `@modelpart{pid=jaw}` names the
+# part without them, the Bedrock geometry keeps them (h_jaw).
+ME_PREFIXES = ("h_", "p_", "hi_", "b_", "g_", "l_", "s_", "ih_", "tag_", "seat_")
+
+
+def resolve_bone(ctx: "Context", pid: str, where: str) -> str:
+    """ModelEngine part id → Bedrock bone (job bone_aliases first, then ModelEngine prefixes)."""
+    bone = ctx.bone_aliases.get(pid, pid)
+    if bone in ctx.bones:
+        return bone
+    for pre in ME_PREFIXES:
+        if pre + pid in ctx.bones:
+            ctx.note(where, f"part '{pid}' is the bone '{pre + pid}' (ModelEngine prefix)")
+            return pre + pid
+    return bone
 
 
 def _ident(where: str) -> str:
@@ -403,7 +457,7 @@ def translate_targeter(t: tuple[str, dict[str, Any]] | None, ctx: Context, where
         return f"@{RADIUS_TARGETERS[name]}{_fmt_opts({'r': float(_opt(o, 'r', 'radius', default=5))})}"
     if name == "modelpart":
         pid = str(_opt(o, "pid", "partid", default=""))
-        bone = ctx.bone_aliases.get(pid, pid)
+        bone = resolve_bone(ctx, pid, where)
         if _opt(o, "em", "exactmatch") is False:
             ctx.note(where, f"@modelpart pid '{pid}' with em=false (all parts starting with it) uses only the "
                             f"part named exactly '{bone}' (map it with bone_aliases) [partial]")
@@ -415,7 +469,7 @@ def translate_targeter(t: tuple[str, dict[str, Any]] | None, ctx: Context, where
         off = {k: v for k, v in off.items() if v != 0}
         if bone in ctx.bones:
             ctx.used_bones.add(bone)
-            if pid != bone:
+            if pid in ctx.bone_aliases:
                 ctx.note(where, f"@modelpart '{pid}' is not in the Bedrock geometry; using alias bone '{bone}'")
             if bone in ctx.blades:
                 # The weapon geometry defines where it hits: totems become a hilt->tip
@@ -559,6 +613,16 @@ def _cond_core(c: ConditionLine, ctx: Context, where: str, target_condition: boo
         return [f"{bang}directionalVelocity{{{';'.join(f'{k}={v}' for k, v in parts.items())}}}"]
     if n == "onground":
         return [f"{bang}onGround"]
+    if n == "damagecause":
+        causes = [MM_DAMAGE_CAUSES.get(x.strip().upper()) for x in str(_opt(o, "cause", "c", default="")).split(",")]
+        if not all(causes):
+            raise ValueError("unknown damage cause")
+        return [f"{bang}damageCause{{cause={'|'.join(causes)}}}"]
+    if n in ("targetinlineofsight", "inlineofsight"):
+        return [f"{bang}lineOfSight"]
+    if n == "drivingmodel":
+        ctx.note(where, "DrivingModel condition dropped (the grab is not a vehicle on Bedrock)")
+        return []
     if n == "isplayer":
         return [f"{bang}isPlayer"]
     if n in ("burning", "onfire"):
@@ -582,8 +646,15 @@ def _cond_core(c: ConditionLine, ctx: Context, where: str, target_condition: boo
 
 def translate_condition(c: ConditionLine, ctx: Context, where: str, target_condition: bool = False) -> list[str]:
     if c.name.startswith("("):
-        ctx.note(where, f"compound condition '{c.raw}' (or/and groups) not supported; dropped")
-        return []
+        m = re.fullmatch(r"\((.*)\)\s*(true|false)?\s*", c.raw.strip(), re.I)
+        inner = m.group(1) if m else ""
+        if not m or "||" in inner or (m.group(2) or "true").lower() == "false":
+            ctx.note(where, f"compound condition '{c.raw}' (or / negated and) not supported; dropped")
+            return []
+        out: list[str] = []
+        for part in inner.split("&&"):
+            out += translate_condition(parse_condition_line(part.strip()), ctx, where, target_condition)
+        return out
     try:
         out = _cond_core(c, ctx, where, target_condition)
     except ValueError as e:
@@ -685,12 +756,20 @@ def translate_line(sl: SkillLine, ctx: Context, where: str) -> dict[str, Any] | 
         line = {"m": "randomSkill", "o": {"skills": skills}}
     elif n == "gcd":
         line = {"m": "gcd", "o": {"ticks": _ticks(_opt(o, "ticks", "t", default=20))}}
+    elif n == "setspeed" and "repeat" in o:
+        ctx.note(where, "setspeed repeat dropped (the speed stays set until changed)")
+        o = {k: v for k, v in o.items() if k not in ("repeat", "repeati", "repeatinterval", "ri")}
+        sl.options = o
+        return translate_line(sl, ctx, where)
     elif n == "setspeed":
         line = {"m": "setSpeed", "o": {"multiplier": float(_opt(o, "s", "speed", default=1))}}
     elif n == "state":
         anim = str(_opt(o, "s", "state", default=""))
         if _opt(o, "r", "remove") is True:
             ctx.note(where, f"state remove '{anim}' dropped (animations end on their own)")
+            return None
+        if anim in ctx.always:
+            ctx.note(where, f"state '{anim}' is an always-on layer (job always_animate); played by the RP instead")
             return None
         if anim not in ctx.anims:
             ctx.note(where, f"state '{anim}' has no matching animation; line dropped")
@@ -707,6 +786,8 @@ def translate_line(sl: SkillLine, ctx: Context, where: str) -> dict[str, Any] | 
         line = {"m": "baseState", "o": {"type": typ, "anim": anim}}
     elif n == "lockmodel":
         line = {"m": "lockFacing", "o": {"on": bool(_opt(o, "l", "lock", default=True))}}
+    elif n == "lockmodelhead":
+        line = {"m": "lockFacing", "o": {"on": bool(_opt(o, "lockyaw", "ly", "l", default=True))}}
     elif n == "addtag":
         line = {"m": "addTag", "o": {"tag": str(_opt(o, "t", "tag"))}}
     elif n == "removetag":
@@ -714,6 +795,8 @@ def translate_line(sl: SkillLine, ctx: Context, where: str) -> dict[str, Any] | 
     elif n == "sound":
         mm = str(_opt(o, "s", "sound", default=""))
         snd = ctx.sounds.get(mm, mm)
+        if snd == mm and ":" in mm and ctx.sounds.get(mm.split(":", 1)[1]):
+            snd = ctx.sounds[mm.split(":", 1)[1]]
         if mm in ctx.sounds:
             ctx.used_mechanics.add("__sound_mapped")
         line = {"m": "sound", "o": {"sound": snd, "volume": _num(_opt(o, "v", "volume", default=1)),
@@ -735,8 +818,8 @@ def translate_line(sl: SkillLine, ctx: Context, where: str) -> dict[str, Any] | 
             ctx.note(where, "totem without onHit dropped")
             return None
         hopts: dict[str, Any] = {"onHit": _skill_ref(on_hit, ctx, where, "onHit"),
-                                 "hr": float(_opt(o, "hr", "hradius", "r", default=1)),
-                                 "vr": float(_opt(o, "vr", "vradius", default=1))}
+                                 "hr": float(_opt(o, "hr", "hradius", "hs", "r", default=1)),
+                                 "vr": float(_opt(o, "vr", "vradius", "vs", default=1))}
         if _opt(o, "hnp", "hitnonplayers") is True:
             hopts["hitNonPlayers"] = True
         if _opt(o, "hp", "hitplayers") is False:
@@ -774,7 +857,10 @@ def translate_line(sl: SkillLine, ctx: Context, where: str) -> dict[str, Any] | 
         if mapped:
             etype, extra = mapped["type"], {k: v for k, v in mapped.items() if k != "type"}
             ctx.note(where, f"summon '{mob}' mapped to {etype}")
-        elif ":" in mob or mob.isupper():
+        elif mob in ctx.mm_mobs:
+            ctx.note(where, f"summon of MythicMobs mob '{mob}' skipped (not converted in this job; add it to `minions` or map it in mob_types)")
+            return None
+        elif ":" in mob or mob.lower() in VANILLA_MOBS:
             etype, extra = ("minecraft:" + mob.lower()) if ":" not in mob else mob, {}
         else:
             ctx.note(where, f"summon '{mob}' has no mapping; line dropped")
@@ -831,11 +917,51 @@ def translate_line(sl: SkillLine, ctx: Context, where: str) -> dict[str, Any] | 
         ctx.note(where, "pull velocity ÷10 like throw [VERIFY by feel]")
     elif n in ("teleport", "tp"):
         line = {"m": "teleport", "o": {}}
+        if _opt(o, "spreadh", "sh", "spreadv", "sv") is not None:
+            ctx.note(where, "teleport spread dropped (lands exactly on the target point)")
+    elif n == "partvis":
+        part = str(_opt(o, "p", "part", "pid", default=""))
+        bone = resolve_bone(ctx, part, where)
+        if bone not in ctx.bones:
+            ctx.note(where, f"partvis part '{part}' is not in the Bedrock geometry; line skipped")
+            return None
+        if bone not in ctx.parts:
+            ctx.parts.append(bone)
+        line = {"m": "partVisibility", "o": {"part": bone, "visible": bool(_opt(o, "v", "visible", "visibility", default=False))}}
+    elif n == "mountmodel":
+        seat = str(_opt(o, "p", "pbone", "part", default=""))
+        bone = resolve_bone(ctx, seat, where)
+        if bone not in ctx.bones:
+            ctx.note(where, f"MountModel seat '{seat}' is not in the Bedrock geometry; line skipped")
+            return None
+        ctx.used_bones.add(bone)
+        dur = ctx.grab_durations.get(where, 40)
+        line = {"m": "grab", "o": {"bone": bone, "duration": dur}}
+        ctx.note(where, f"MountModel → grab: the target is held at bone '{bone}' for {dur} ticks (Bedrock cannot seat players on bones)")
+    elif n in ("dismountall", "dismountmodel"):
+        ctx.note(where, f"skipped `{sl.mechanic}` (grab releases on its own)")
+        return None
+    elif n == "recoil":
+        pitch = abs(float(_opt(o, "pitch", "p", default=0.2)))
+        line = {"m": "cameraShake", "o": {"intensity": round(min(1.0, max(0.05, pitch)), 2), "seconds": 0.1, "type": "rotational"}}
+    elif n == "runaitargetselector":
+        target = str(_opt(o, "target", "t", default="")).lower()
+        line = {"m": "setAI", "o": {"mode": "frozen" if target == "clear" else "chase"}}
+        ctx.note(where, f"runAItargetselector {target} → setAI {line['o']['mode']}")
+    elif n == "setai":
+        line = {"m": "setAI", "o": {"mode": "chase" if _opt(o, "ai", "a", default=True) is not False else "frozen"}}
+    elif n == "sudoskill":
+        line = {"m": "skill", "o": {"skill": _skill_ref(_opt(o, "s", "skill"), ctx, where, "skill")}}
+        ctx.note(where, "SudoSkill runs the skill as the boss (Bedrock entities cannot cast Behemoth skills)")
     elif n in ("projectile", "missile"):
         line = _projectile(sl, ctx, where, n)
-    elif n in ("particle", "effect:particle", "e:p"):
+    elif n in ("particle", "particles", "effect:particle", "effect:particles", "e:p"):
+        count = int(_opt(o, "amount", "a", default=1))
+        if count > MAX_PARTICLE_COUNT:
+            ctx.note(where, f"particle amount {count} capped at {MAX_PARTICLE_COUNT} (per-tick particle budget)")
+            count = MAX_PARTICLE_COUNT
         line = {"m": "particle", "o": {**_particle_opts(ctx, o, where),
-                                        "count": int(_opt(o, "amount", "a", default=1)),
+                                        "count": count,
                                         "spread": float(_opt(o, "hspread", "hs", "spread", default=0)),
                                         "yOffset": float(_opt(o, "yoffset", "y", default=0))}}
     elif n in ("particlering", "effect:particlering", "e:pr"):
@@ -995,7 +1121,7 @@ def _line_refs(sl: SkillLine) -> list[str]:
     n, o = sl.mechanic.lower(), sl.options
     names: list[str] = []
     values: list[Any] = []
-    if n in ("skill", "metaskill", "meta", "$"):
+    if n in ("skill", "metaskill", "meta", "$", "sudoskill"):
         values.append(_opt(o, "s", "skill", "$", "meta", "m"))
     elif n == "randomskill":
         names += [s.strip() for s in str(_opt(o, "s", "skills", "m", default="")).split(",")]
@@ -1060,6 +1186,22 @@ def _mob_variables(mob: dict, ctx: Context, where: str) -> dict[str, Any]:
     return out
 
 
+def _grab_durations(name: str, raw_lines: list, ctx: Context) -> None:
+    """MountModel holds its target until DismountAll: sum the `delay N` lines in between."""
+    parsed = [parse_skill_line(str(r)) for r in raw_lines]
+    for i, sl in enumerate(parsed):
+        if sl.mechanic.lower() != "mountmodel":
+            continue
+        total = 0
+        for later in parsed[i + 1:]:
+            n = later.mechanic.lower()
+            if n in ("dismountall", "dismountmodel"):
+                break
+            if n == "delay":
+                total += _ticks(later.options.get("ticks", 0))
+        ctx.grab_durations[f"{name}[{i}]"] = max(1, total)
+
+
 def translate_boss(mob_id: str, mob: dict, skills: dict[str, dict], ctx: Context) -> dict[str, Any]:
     """Returns the config pieces: skills, damageModifiers, display, stats, ai, threat, variables."""
     out_skills: dict[str, Any] = {}
@@ -1101,6 +1243,7 @@ def translate_boss(mob_id: str, mob: dict, skills: dict[str, dict], ctx: Context
     for name in reachable_skills(mob_lines, skills):
         spec = skills[name] or {}
         where = name
+        _grab_durations(name, spec.get("Skills") or [], ctx)
         lines = []
         for j, raw in enumerate(spec.get("Skills") or []):
             line = translate_line(parse_skill_line(str(raw)), ctx, f"{name}[{j}]")

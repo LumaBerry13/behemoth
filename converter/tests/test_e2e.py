@@ -79,7 +79,17 @@ def test_archivist_style_mappings(out):
     assert "minecraft:boss" not in comps and "bhm_minion" in comps["minecraft:type_family"]["family"]
     boss_entity = json.loads((out / "BP" / "entities" / "kitchen.json").read_text(encoding="utf-8"))
     assert "bhm:tint" in boss_entity["minecraft:entity"]["description"]["properties"]
-    assert (out / "RP" / "render_controllers" / "kitchen.bhm_tint.render_controllers.json").exists()
+    assert (out / "RP" / "render_controllers" / "kitchen.bhm.render_controllers.json").exists()
+    assert 'm: "grab", o: { bone: "arm", duration: 25 }' in js        # MountModel held until DismountAll
+    assert 'm: "partVisibility", o: { part: "arm", visible: false }' in js and 'parts: ["arm"]' in js
+    assert '"damageCause{cause=entityAttack}"' in js
+    assert '"fieldOfView{angle=45.0;rotation=0.0}", "lineOfSight"' in js  # (a && b) compound
+    assert 'm: "cameraShake"' in js and 'm: "setAI", o: { mode: "frozen" }' in js
+    assert 'skill: "ks_bleed"' in js and 'color: "#5A1A8C"' in js        # SudoSkill + crying_obsidian dust
+    rc = json.loads((out / "RP" / "render_controllers" / "kitchen.bhm.render_controllers.json").read_text(encoding="utf-8"))
+    vis = rc["render_controllers"]["controller.render.kitchen.bhm"]["part_visibility"]
+    assert vis[0] == {"*": True} and "arm" in vis[1]
+    assert "bhm:hidden_parts" in boss_entity["minecraft:entity"]["description"]["properties"]
     index = (out / "BP" / "scripts" / "bosses" / "index.js").read_text(encoding="utf-8")
     assert "export default [kitchen, kitchen_spark]" in index
     lang = (out / "RP" / "texts" / "en_US.lang").read_text(encoding="utf-8")

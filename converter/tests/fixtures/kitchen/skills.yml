@@ -111,3 +111,26 @@ ks_angry:
 ks_turn:
   Skills:
   - setrotation{yaw=180;relative=true} @self
+
+# --- ModelEngine-style mechanics: part visibility, mount grab, recoil, AI switches ---
+ks_bleed:
+  Conditions:
+  - damagecause{cause=ENTITY_ATTACK} true
+  Skills:
+  - effect:particles{particle=block;m=crying_obsidian;amount=20;hS=.1;vS=.1} @forward{f=1.5;y=1.6}
+
+ks_grab_bite:
+  TargetConditions:
+  - (fieldofview{angle=45} && lineofsight) true
+  Skills:
+  - lockmodelhead{mid=kitchen;lockyaw=true;lockpitch=true} @self
+  - runAItargetselector{target=clear} @self
+  - partvis{m=kitchen;p=arm;child=true} @self
+  - totem{md=2;oH=ks_bolt_hit;hs=1;vs=1;delay=20} @modelpart{pid=arm}
+  - MountModel{d=false;f=true;m=force_walking;mid=kitchen;p=arm} @target
+  - delay 25
+  - recoil{r=10;pitch=-.4} @PlayersInRadius{r=10}
+  - DismountAll{mid=kitchen;p=arm} @self
+  - partvis{m=kitchen;p=arm;child=true;v=true} @self
+  - setAI{ai=true} @self
+  - lockmodelhead{mid=kitchen;lockyaw=false;lockpitch=false} @self

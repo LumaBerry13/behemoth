@@ -116,9 +116,11 @@ TINT_PROPERTY = {"type": "int", "range": [0, 16777215], "default": 16777215, "cl
 
 
 def patch_behavior(behavior: dict, idle_states: int, walk_states: int, boss_bar_range: int, notes: list[str],
-                   boss_name: str = "", kind: str = "boss", identifier: str | None = None, tint: bool = False) -> dict:
+                   boss_name: str = "", kind: str = "boss", identifier: str | None = None, tint: bool = False,
+                   parts: int = 0) -> dict:
     """kind "boss": boss bar + family bhm_boss; "minion": no boss bar, family bhm_minion.
-    identifier renames the entity (several converted mobs sharing one model); tint adds bhm:tint."""
+    identifier renames the entity (several converted mobs sharing one model); tint adds bhm:tint;
+    parts > 0 adds bhm:hidden_parts (bit mask of hideable parts, config.parts)."""
     out = copy.deepcopy(behavior)
     if _version_tuple(out.get("format_version", "0")) < _version_tuple(STUB_FORMAT):
         notes.append(f"behavior format_version {out.get('format_version')} → {STUB_FORMAT} (entity properties)")
@@ -139,6 +141,8 @@ def patch_behavior(behavior: dict, idle_states: int, walk_states: int, boss_bar_
     })
     if tint:
         props["bhm:tint"] = dict(TINT_PROPERTY)
+    if parts:
+        props["bhm:hidden_parts"] = {"type": "int", "range": [0, 2 ** parts - 1], "default": 0, "client_sync": True}
 
     comps = ent.setdefault("components", {})
     for removed, why in (("minecraft:despawn", "bosses never despawn naturally"),
@@ -208,48 +212,57 @@ def build_base_controller(boss: str, idle: list[str], walk: list[str]) -> dict:
     }
 
 
-def tint_controller_id(boss: str) -> str:
-    return f"controller.render.{boss}.bhm_tint"
+def render_controller_id(boss: str) -> str:
+    return f"controller.render.{boss}.bhm"
 
 
-def build_tint_controller(boss: str) -> dict:
-    """Render controller that turns bhm:tint (0xRRGGBB, white = none) into an overlay colour (L37)."""
-    prop = "q.property('bhm:tint')"
-    return {
-        "format_version": "1.8.0",
-        "render_controllers": {
-            tint_controller_id(boss): {
-                "geometry": "Geometry.default",
-                "materials": [{"*": "Material.default"}],
-                "textures": ["Texture.default"],
-                "overlay_color": {
-                    "r": f"math.floor({prop} / 65536) / 255",
-                    "g": f"math.mod(math.floor({prop} / 256), 256) / 255",
-                    "b": f"math.mod({prop}, 256) / 255",
-                    "a": f"{prop} == 16777215 ? 0.0 : 0.6",
-                },
-            }
-        },
-    }
+def build_render_controller(boss: str, tint: bool, parts: list[str]) -> dict:
+    """Render controller for the framework's visual properties: bhm:tint (0xRRGGBB, white = none)
+    as an overlay colour (L37) and bhm:hidden_parts (bit i hides parts[i]) as part_visibility."""
+    rc: dict = {"geometry": "Geometry.default", "materials": [{"*": "Material.default"}], "textures": ["Texture.default"]}
+    if tint:
+        prop = "q.property('bhm:tint')"
+        rc["overlay_color"] = {
+            "r": f"math.floor({prop} / 65536) / 255",
+            "g": f"math.mod(math.floor({prop} / 256), 256) / 255",
+            "b": f"math.mod({prop}, 256) / 255",
+            "a": f"{prop} == 16777215 ? 0.0 : 0.6",
+        }
+    if parts:
+        mask = "q.property('bhm:hidden_parts')"
+        rc["part_visibility"] = [{"*": True}] + [
+            {bone: f"math.mod(math.floor({mask} / {2 ** i}), 2) < 1"} for i, bone in enumerate(parts)]
+    return {"format_version": "1.8.0", "render_controllers": {render_controller_id(boss): rc}}
 
 
-def patch_client_entity(client: dict, boss: str, notes: list[str], identifier: str | None = None, tint: bool = False) -> dict:
+def patch_client_entity(client: dict, boss: str, notes: list[str], identifier: str | None = None, tint: bool = False,
+                        parts: list[str] | None = None, always: list[str] | None = None,
+                        sound_effects: dict[str, str] | None = None) -> dict:
+    """Base-layer controller first in scripts.animate, plus: identifier override, the generated
+    render controller (tint / hideable parts), always-on layer animations and sound effects."""
     out = copy.deepcopy(client)
     desc = out["minecraft:client_entity"]["description"]
     if identifier:
         desc["identifier"] = identifier
-    if tint:
+    if tint or parts:
         rcs = desc.get("render_controllers", [])
         if rcs == ["controller.render.default"]:
-            desc["render_controllers"] = [tint_controller_id(boss)]
-            notes.append(f"client entity: render controller → {tint_controller_id(boss)} (tint overlay from bhm:tint)")
+            desc["render_controllers"] = [render_controller_id(boss)]
+            what = " + ".join(x for x in ("tint overlay" if tint else "", "part visibility" if parts else "") if x)
+            notes.append(f"client entity: render controller → {render_controller_id(boss)} ({what})")
         else:
-            notes.append(f"client entity: tint used but render controllers {rcs} are custom; add overlay_color from "
-                         f"{tint_controller_id(boss)} to them by hand")
+            notes.append(f"client entity: render controllers {rcs} are custom; add overlay_color / part_visibility from "
+                         f"{render_controller_id(boss)} to them by hand")
     desc.setdefault("animations", {})["bhm_base"] = base_controller_id(boss)
     scripts = desc.setdefault("scripts", {})
     animate = scripts.setdefault("animate", [])
     if "bhm_base" not in animate:
         animate.insert(0, "bhm_base")
         notes.append("client entity: added base-layer controller `bhm_base` (first in scripts.animate)")
+    for anim in always or []:
+        if anim not in animate:
+            animate.append(anim)
+            notes.append(f"client entity: `{anim}` always plays as a layer (job always_animate)")
+    if sound_effects:
+        desc.setdefault("sound_effects", {}).update(sound_effects)
     return out

@@ -20,6 +20,9 @@ mc.tick(1);
 const boss = services.bosses.get(entity.id);
 if (!boss) throw new Error(`no boss instance for ${typeId}`);
 const list = skills.length ? skills : [...boss.compiled.skills.keys()];
+// Measure the attacks alone: the boss's own triggered skills (timers that teleport, run or
+// grab) would move it away from the test player mid-swing.
+boss.compiled = { ...boss.compiled, byTrigger: new Map() };
 
 const DISTANCES = [1.5, 2.5, 3.5, 4.5];
 const ANGLES = [-90, -45, 0, 45, 90, 180]; // relative to the boss's facing; + = boss's left

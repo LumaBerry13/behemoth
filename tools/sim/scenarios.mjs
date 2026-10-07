@@ -824,5 +824,49 @@ console.log("\n32. particle library: bhm:* particles with colour/size/lifetime v
   }
 }
 
+console.log("\n33. partVisibility, grab, damageCause, onAttack from a cancelled melee swing");
+{
+  const d = demo();
+  if (!d) check("skipped (demo pack not loaded)", true);
+  else {
+    d.run("demo_vanish", 2);
+    check("parts hidden: bit mask on bhm:hidden_parts", d.e.props["bhm:hidden_parts"] === 3 && d.boss.hiddenParts === 3);
+    services.bosses.save(d.boss);
+    check("hidden parts persisted", JSON.parse(d.e.dyn["bhm:state"]).parts === 3);
+    mc.tick(40);
+    check("…and shown again", d.e.props["bhm:hidden_parts"] === 0);
+    d.run("demo_vanish", 2);
+    d.boss.reset("test");
+    check("reset shows every part", d.e.props["bhm:hidden_parts"] === 0);
+
+    d.player.location = { x: 0, y: 64, z: 6 };
+    const start = mc.log.length;
+    d.run("demo_grab", 10);
+    const held = mc.log.slice(start).filter(([, k, x]) => k === "teleport" && x.startsWith("minecraft:player"));
+    check("grab holds the target at the bone every tick", held.length >= 9 && Math.hypot(d.player.location.x, d.player.location.z - 0) < 1.5, `${held.length} teleports`);
+    mc.tick(25);
+    const s2 = mc.log.length;
+    mc.tick(10);
+    check("…and lets go after its duration", !mc.log.slice(s2).some(([, k, x]) => k === "teleport" && x.startsWith("minecraft:player")));
+
+    const s3 = mc.log.length;
+    d.e.applyDamage(2, { cause: "entityAttack", damagingEntity: d.player });
+    mc.tick(2);
+    check("melee damage makes it bleed (damageCause)", mc.log.slice(s3).some(([, k, x]) => k === "particle" && x.startsWith("bhm:dust") && x.includes("color_r=0.478")));
+    mc.tick(10);
+    const s4 = mc.log.length;
+    d.e.applyDamage(2, { cause: "magic" });
+    mc.tick(2);
+    check("other damage does not", !mc.log.slice(s4).some(([, k, x]) => k === "particle" && x.startsWith("bhm:dust") && x.includes("color_r=0.478")));
+
+    let attacks = 0;
+    services.bus.on("attack", (ev) => { if (ev.boss === d.boss) attacks++; });
+    d.player.applyDamage(4, { cause: "entityAttack", damagingEntity: d.e }); // the vanilla melee swing, damage cancelled
+    mc.world.afterEvents.entityHitEntity.fire({ damagingEntity: d.e, hitEntity: d.player }); // same swing's hit event
+    mc.tick(2);
+    check("a cancelled vanilla swing still fires onAttack, once per tick", attacks === 1, `${attacks}`);
+  }
+}
+
 console.log(failures ? `\n[scenarios] ${failures} FAILED` : "\n[scenarios] all passed");
 process.exit(failures ? 1 : 0);

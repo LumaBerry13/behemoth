@@ -183,6 +183,8 @@ export class BossManager {
       // Vanilla melee from a boss is cancelled (MythicMobs `CancelEvent ~onAttack`):
       // the chase AI uses melee_attack only for pathfinding; damage comes from skills.
       if (attacker && !Adapter.isFrameworkDamage() && attacker.config.ai?.vanillaMelee !== true && cause === "entityAttack") {
+        // The melee swing still counts as an attack (onAttack), even though its damage is cancelled.
+        Adapter.run(() => this.emitAttack(attacker, hurt));
         return { cancel: true };
       }
       // Bosses never hurt each other (one shared faction) unless ai.friendlyFire.
@@ -213,7 +215,7 @@ export class BossManager {
 
     ev.onEntityHitEntity((attacker, victim) => {
       const boss = this.instances.get(attacker.id);
-      if (boss && !boss.dead) bus.emit("attack", { boss, triggerEntity: victim });
+      if (boss) this.emitAttack(boss, victim);
     });
 
     ev.onEntityDie((dead, killer, cause) => {
@@ -237,6 +239,19 @@ export class BossManager {
       const boss = this.instances.get(target.id);
       if (boss && !boss.dead) bus.emit("interact", { boss, triggerEntity: player });
     });
+  }
+
+  /**
+   * onAttack: a boss's melee swing connected. Fired from the hit event and from the
+   * cancelled vanilla melee damage, at most once per tick per boss.
+   * @param {BossInstance} boss @param {Entity} victim
+   */
+  emitAttack(boss, victim) {
+    if (boss.dead || boss.destroyed) return;
+    const now = this.services.scheduler.tick;
+    if (boss.lastAttackTick === now) return;
+    boss.lastAttackTick = now;
+    this.services.bus.emit("attack", { boss, triggerEntity: victim });
   }
 
   /** @param {string} typeId */
@@ -277,6 +292,7 @@ export class BossManager {
       boss.setAiMode(compiled.config.ai?.default ?? "chase");
       boss.setSpeed(boss.speedMult);
       boss.applyDisplay();
+      boss.applyParts();
       Log.debug(`resumed ${entity.typeId} (${entity.id}) in phase ${boss.phase}`);
       this.services.bus.emit("load", { boss });
       return boss;

@@ -124,6 +124,12 @@ export interface BossConfig {
   };
   /** Initial caster-scope variables (MythicMobs mob `Variables`). */
   variables?: Record<string, number | string | boolean>;
+  /**
+   * Model parts that skills can hide/show (partVisibility, ModelEngine partvis), at most 16.
+   * Bit i of the int entity property bhm:hidden_parts = parts[i] hidden; the RP render
+   * controller's part_visibility reads it (the converter generates both).
+   */
+  parts?: string[];
   /** Starts (and resets to) invulnerable: every hit is cancelled (MythicMobs Invincible; effect entities). */
   invulnerable?: boolean;
   /** Keep this entity on Peaceful difficulty (default false: removed, D6). */

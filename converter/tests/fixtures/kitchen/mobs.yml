@@ -23,6 +23,8 @@ kitchen_boss:
   - skill{s=ks_greet} @trigger ~onCombat
   - skill{s=ks_resume} @self ~onLoad
   - skill{s=ks_mind} @target ~onTimer:20
+  - SudoSkill{s=ks_bleed} @trigger ~onDamaged
+  - skill{s=ks_grab_bite} @target ~onTimer:30
 
 # A made-up effect mob summoned by the boss (converted in the same job as a minion).
 kitchen_spark:

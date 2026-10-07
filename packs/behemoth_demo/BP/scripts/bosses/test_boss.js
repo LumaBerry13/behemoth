@@ -10,6 +10,8 @@ export default {
   stats: { health: 300, knockbackResist: 1, scale: 1.5, movementSpeed: 0.25, healthScaling: { perPlayer: 0.5, max: 4 } },
   // Caster variables and their starting values (MythicMobs mob Variables).
   variables: { combo: 0, mode: "angry" },
+  // Model parts skills can hide (partVisibility); the RP render controller reads bhm:hidden_parts.
+  parts: ["head", "rightArm"],
   animations: anims,
   ai: { default: "chase", targetRange: 32, leashRange: 48, resetAfterNoPlayers: 600 },
   threat: { enabled: true },
@@ -264,6 +266,28 @@ export default {
       ],
     },
     demo_telegraph_hit: { m: "damage", o: { amount: 6 } },
+    // Hide model parts, then bring them back (ModelEngine partvis).
+    demo_vanish: {
+      c: [
+        { m: "partVisibility", o: { part: ["head", "rightArm"], visible: false } },
+        { m: "particle", o: { particle: "bhm:smoke", color: "#202020", amount: 8 } },
+        { m: "partVisibility", o: { part: ["head", "rightArm"], visible: true }, delay: 40 },
+      ],
+    },
+    // Grab the target and hold it in front of the boss for 30 ticks, then throw it (ModelEngine MountModel).
+    demo_grab: {
+      c: [
+        { m: "grab", o: { bone: "rightArm", duration: 30, offsetY: -0.5 }, t: "@target" },
+        { m: "throw", o: { velocity: 8, velocityY: 3 }, t: "@target", delay: 30 },
+      ],
+    },
+    // Only melee hits make it bleed (damageCause).
+    bleed: {
+      tr: "onDamaged",
+      if: ["damageCause{cause=entityAttack}"],
+      cooldown: 5,
+      m: "particle", o: { particle: "bhm:dust", color: "#7A0E0E", count: 6, spread: 0.4, yOffset: 1.5 },
+    },
     on_combat: { tr: "onCombat", m: "actionBar", o: { text: "§cThe Test Boss notices you" }, t: "@trigger" },
     on_kill_player: { tr: "onKillPlayer", m: "message", o: { text: "§c<trigger.name> was defeated by <caster.name>" }, t: "@PlayersInRadius{r=48}" },
     on_load: { tr: "onLoad", m: "particle", o: { particle: "minecraft:totem_particle", count: 3 } },

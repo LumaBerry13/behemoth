@@ -53,6 +53,10 @@ export class BossInstance {
     this.healthScale = 1;
     /** Players counted for the current health scale. */
     this.scaledFor = 1;
+    /** Bit mask of hidden model parts (bit i = config.parts[i]); entity property bhm:hidden_parts. */
+    this.hiddenParts = 0;
+    /** Last framework tick an `attack` event was emitted (one per tick). */
+    this.lastAttackTick = -1;
     /** Framework tick when a `stun` ends (0 = not stunned). */
     this.stunUntil = 0;
     /** @type {{ ai: AiMode, speed: number, facing: boolean } | undefined} state restored when the stun ends */
@@ -271,6 +275,28 @@ export class BossInstance {
     this.stunUntil = Math.max(this.stunUntil, this.services.scheduler.tick + ticks);
   }
 
+  /**
+   * Show or hide a model part listed in config.parts (partVisibility mechanic).
+   * @param {string} part @param {boolean} visible
+   * @returns {boolean} false if the part is not listed
+   */
+  setPartVisible(part, visible) {
+    const i = (this.config.parts ?? []).indexOf(part);
+    if (i < 0) return false;
+    const bit = 1 << i;
+    const mask = visible ? this.hiddenParts & ~bit : this.hiddenParts | bit;
+    if (mask !== this.hiddenParts) {
+      this.hiddenParts = mask;
+      this.applyParts();
+    }
+    return true;
+  }
+
+  /** Push the hidden-part mask to the entity (render controller part_visibility). */
+  applyParts() {
+    if (this.config.parts?.length) Adapter.setProperty(this.entity, "bhm:hidden_parts", this.hiddenParts);
+  }
+
   endStun() {
     const prev = this.stunPrev;
     this.stunUntil = 0;
@@ -327,6 +353,8 @@ export class BossInstance {
     this.hitCooldowns.clear();
     this.stunUntil = 0;
     this.stunPrev = undefined;
+    this.hiddenParts = 0;
+    this.applyParts();
     this.updateHealthScale(true);
     this.gcdUntil = 0;
     this.invulnerable = !!this.config.invulnerable;

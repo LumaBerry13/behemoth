@@ -71,6 +71,9 @@ export class Validator {
       if (config.variables !== undefined && (typeof config.variables !== "object" || Array.isArray(config.variables))) fatal.push("variables must be an object of name → initial value");
       const hs = config.stats?.healthScaling;
       if (hs !== undefined && (typeof hs.perPlayer !== "number" || hs.perPlayer < 0)) fatal.push("stats.healthScaling.perPlayer must be a number ≥ 0");
+      if (config.parts !== undefined && (!Array.isArray(config.parts) || config.parts.length > 16 || config.parts.some((p) => typeof p !== "string"))) {
+        fatal.push("parts must be a list of at most 16 bone names");
+      }
       if (config.loot?.mode !== undefined && !VALID_LOOT.includes(config.loot.mode)) fatal.push(`loot.mode must be one of ${VALID_LOOT.join("/")}`);
       for (const req of config.requires ?? []) {
         if (!this.registry.isUsable(req)) fatal.push(`requires mechanic "${req}" which is not registered or disabled`);

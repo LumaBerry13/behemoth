@@ -141,6 +141,8 @@ import forcePull from "../modules/mechanics/force_pull.js";
 import command from "../modules/mechanics/command.js";
 import suicide from "../modules/mechanics/suicide.js";
 import telegraph from "../modules/mechanics/telegraph.js";
+import partVisibility from "../modules/mechanics/part_visibility.js";
+import grab from "../modules/mechanics/grab.js";
 
 import self from "../modules/targeters/self.js";
 import target from "../modules/targeters/target.js";
@@ -192,6 +194,7 @@ import crouching from "../modules/conditions/crouching.js";
 import sprinting from "../modules/conditions/sprinting.js";
 import entityType from "../modules/conditions/entity_type.js";
 import hasEffect from "../modules/conditions/has_effect.js";
+import damageCause from "../modules/conditions/damage_cause.js";
 
 import onSpawn from "../modules/triggers/on_spawn.js";
 import onTimer from "../modules/triggers/on_timer.js";
@@ -278,6 +281,8 @@ export function bindModules(sm) {
   sm.bind("command", command);
   sm.bind("suicide", suicide);
   sm.bind("telegraph", telegraph);
+  sm.bind("partVisibility", partVisibility);
+  sm.bind("grab", grab);
 
   sm.bindTargeter("self", self);
   sm.bindTargeter("target", target);
@@ -330,6 +335,7 @@ export function bindModules(sm) {
   sm.bindCondition("sprinting", sprinting);
   sm.bindCondition("entityType", entityType);
   sm.bindCondition("hasEffect", hasEffect);
+  sm.bindCondition("damageCause", damageCause);
 
   sm.bindTrigger("onSpawn", onSpawn);
   sm.bindTrigger("onTimer", onTimer);
