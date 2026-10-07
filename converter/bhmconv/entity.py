@@ -266,3 +266,100 @@ def patch_client_entity(client: dict, boss: str, notes: list[str], identifier: s
     if sound_effects:
         desc.setdefault("sound_effects", {}).update(sound_effects)
     return out
+
+
+# --------------------------------------------------------------------------- #
+# Folder mode: complete a bare (Blockbench) behavior file
+# --------------------------------------------------------------------------- #
+
+def geometry_size(geo: dict) -> tuple[float, float]:
+    """Collision box (width, height) in blocks from the model's cubes: arms and antlers stick out,
+    so width = 0.6 × the narrower horizontal extent and height = 0.75 × the top."""
+    xs, ys, zs = [], [], []
+    for g in geo.get("minecraft:geometry", []):
+        for b in g.get("bones", []):
+            for c in b.get("cubes", []):
+                o, s = c.get("origin", [0, 0, 0]), c.get("size", [0, 0, 0])
+                xs += [o[0], o[0] + s[0]]
+                ys += [o[1], o[1] + s[1]]
+                zs += [o[2], o[2] + s[2]]
+    if not xs:
+        return 0.6, 1.8
+    width = min(max(xs) - min(xs), max(zs) - min(zs)) / 16 * 0.6
+    height = max(ys) / 16 * 0.75
+    return round(min(3.0, max(0.6, width)), 1), round(min(6.0, max(0.5, height)), 1)
+
+
+def complete_behavior(behavior: dict, mob: dict, size: tuple[float, float], notes: list[str]) -> dict:
+    """Add what a bare Blockbench behavior file lacks, from the MythicMobs mob: health, collision box,
+    movement and pathfinding, follow range, knockback resistance, immunities (DamageModifiers 0).
+    Existing components are kept; everything added is reported."""
+    out = copy.deepcopy(behavior)
+    comps = out["minecraft:entity"].setdefault("components", {})
+    opts = mob.get("Options") or {}
+
+    def add(name: str, value: Any, why: str) -> None:
+        if name not in comps:
+            comps[name] = value
+            notes.append(f"behavior: added {name} ({why})")
+
+    hp = float(mob.get("Health", 20) or 20)
+    add("minecraft:health", {"value": hp, "max": hp}, "MythicMobs Health")
+    add("minecraft:collision_box", {"width": size[0], "height": size[1]}, "from the model size")
+    speed = float(opts.get("MovementSpeed", 0) or 0)
+    add("minecraft:movement", {"value": speed if speed > 0 else 0.25}, "MythicMobs MovementSpeed" if speed > 0 else "default 0.25")
+    add("minecraft:movement.basic", {}, "walking")
+    add("minecraft:jump.static", {}, "walking")
+    add("minecraft:navigation.walk", {"can_path_over_water": True, "avoid_damage_blocks": True}, "pathfinding")
+    add("minecraft:physics", {}, "gravity and collision")
+    add("minecraft:pushable", {"is_pushable": False, "is_pushable_by_piston": False}, "bosses are not pushed around")
+    follow = float(opts.get("FollowRange", 32) or 32)
+    add("minecraft:follow_range", {"value": follow, "max": follow}, "MythicMobs FollowRange")
+    add("minecraft:knockback_resistance", {"value": float(opts.get("KnockbackResistance", 1) or 0)}, "MythicMobs KnockbackResistance")
+    add("minecraft:breathable", {"total_supply": 15, "suffocate_time": 0, "breathes_water": True}, "no drowning")
+    add("minecraft:nameable", {"always_show": False, "allow_name_tag_renaming": False}, "boss bar name")
+    if "minecraft:behavior.random_stroll" in comps:
+        del comps["minecraft:behavior.random_stroll"]
+        notes.append("behavior: removed base random_stroll (the Behemoth idle group strolls; it would fight the chase AI)")
+    causes = {"FALL": "fall", "SUFFOCATION": "suffocation", "FREEZE": "freezing", "DROWNING": "drowning",
+              "FIRE": "fire", "FIRE_TICK": "fire_tick", "LAVA": "lava", "LIGHTNING": "lightning"}
+    immune = []
+    for raw in mob.get("DamageModifiers") or []:
+        parts = str(raw).split()
+        if len(parts) == 2 and parts[0].upper() in causes and float(parts[1]) == 0:
+            immune.append(causes[parts[0].upper()])
+    if immune:
+        sensor = comps.setdefault("minecraft:damage_sensor", {"triggers": []})
+        triggers = sensor.get("triggers")
+        if isinstance(triggers, dict):
+            triggers = [triggers]
+        have = {t.get("cause") for t in triggers}
+        new = [{"cause": c, "deals_damage": "no"} for c in immune if c not in have]
+        sensor["triggers"] = new + triggers
+        if new:
+            notes.append(f"behavior: immune to {', '.join(t['cause'] for t in new)} (DamageModifiers 0)")
+    return out
+
+
+def add_scripted_death(behavior: dict, seconds: float, notes: list[str]) -> dict:
+    """Fatal damage starts a timed death instead of killing the entity, so the death animation and
+    death skills can play; the body despawns after `seconds`. The framework treats the event as death."""
+    out = copy.deepcopy(behavior)
+    ent = out["minecraft:entity"]
+    groups = ent.setdefault("component_groups", {})
+    groups["bhm:dying"] = {"minecraft:timer": {"looping": False, "time": round(seconds, 2),
+                                               "time_down_event": {"event": "bhm:remove_body"}}}
+    groups["bhm:body_removed"] = {"minecraft:instant_despawn": {}}
+    events = ent.setdefault("events", {})
+    events["bhm:start_death"] = {"add": {"component_groups": ["bhm:dying"]}}
+    events["bhm:remove_body"] = {"add": {"component_groups": ["bhm:body_removed"]}}
+    comps = ent.setdefault("components", {})
+    sensor = comps.setdefault("minecraft:damage_sensor", {"triggers": []})
+    triggers = sensor.get("triggers")
+    if isinstance(triggers, dict):
+        triggers = [triggers]
+    triggers.append({"on_damage": {"filters": {"test": "has_damage", "value": "fatal"}, "event": "bhm:start_death"},
+                     "deals_damage": "no"})
+    sensor["triggers"] = triggers
+    notes.append(f"behavior: scripted death (death animation + death skills play, body removed after {seconds:.1f} s)")
+    return out

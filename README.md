@@ -43,6 +43,7 @@ also comes with a Python converter that turns MythicMobs + ModelEngine bosses in
   summoned effects (telegraphs, slashes) know their boss.
 - **Multiplayer:** health scales with the number of players; loot goes into a chest where the boss died, and
   explosions can't destroy it. Bosses are removed on Peaceful.
+- **Custom boss bars:** a PNG per boss drawn over the vanilla boss bar ([docs/converting.md](docs/converting.md#6-custom-boss-bar)).
 - **Particle library:** coloured dust, sparks, smoke, glows, flashes, shockwave rings, swirls and ground telegraphs
   are built into the framework; skills set colour, size and lifetime per line. See [docs/particles.md](docs/particles.md).
 - **Persistence:** fights survive chunk unloads, `/reload` and restarts.
@@ -108,7 +109,7 @@ connector/connector.js   the connector every boss pack includes (copy unchanged)
 connector/framework.json framework UUID/version that boss packs depend on
 converter/               Python converter: MythicMobs + ModelEngine → Behemoth boss pack
 tools/                   deploy, validate, package, particle library generator, headless simulator (tools/sim)
-docs/                    menu icon list, particle library
+docs/                    converting guide, menu icon list, particle library
 private/                 git-ignored: licensed sources and their converted boss packs
 ```
 
@@ -144,19 +145,18 @@ between packs, and the connector reports any it finds.
 
 ### Converting a MythicMobs boss
 
-1. Put the boss's Bedrock files (entity JSON, `.geo.json`, `.animation.json`, texture) and its MythicMobs YAML in
-   `private/<Boss>/`.
-2. Write `private/<Boss>/<boss>.job.json`. The format is documented at the top of
-   [`converter/bhmconv/cli.py`](converter/bhmconv/cli.py). It covers mappings (summoned mobs, sounds, bone aliases,
-   blades, particles, projectile models) and Bedrock-side tuning. List the pack's other mobs (minions, effect mobs)
-   under `minions` to convert them into the same pack; the boss's summons of them are mapped automatically.
-3. Run `npm run convert -- --job private/<Boss>/<boss>.job.json`, then read `private/<Boss>/<boss>.report.md`. It
-   lists everything skipped or approximated.
-4. The pack is written to `private/<Boss>/pack/{BP,RP}`. Run `npm run validate`, `npm run sim:scenarios`, then
-   `npm run deploy`.
+Prepare one folder (the MythicMobs YAML, one sub-folder per mob with its Bedrock files, optional
+sounds and boss bar image) and run:
 
-The converter bakes bone tracks in a compact form, patches the entity with the Behemoth-ready stub, adds an idle/walk
-base animation controller, and gives the pack stable UUIDs (saved back into the job file).
+```
+npm run convert -- private/<Boss> --check   # optional: is everything the YAML uses supported?
+npm run convert -- private/<Boss>           # finished pack/BP + pack/RP, dist/<Pack>.mcaddon, report.md
+```
+
+[docs/converting.md](docs/converting.md) explains how to prepare the folder: file and folder naming, packs
+with several mobs (boss, minions, effect entities), sounds, custom boss bars, optional settings and the
+report. The converter completes bare Blockbench behavior files, links animations, adds a scripted death,
+packages sounds and gives the pack stable UUIDs. The older job-file mode (`--job`) still works.
 
 ## Writing a boss config by hand
 
