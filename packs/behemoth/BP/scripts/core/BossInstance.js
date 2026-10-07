@@ -215,19 +215,24 @@ export class BossInstance {
     if (t) Adapter.lookAt(this.entity, Adapter.getHeadLocation(t));
   }
 
-  /** Apply the display name / boss bar text. */
+  /**
+   * Apply the display name / boss bar text. A boss with a custom bar image (display.barKey) has no
+   * name tag: its bar then shows the entity's minecraft:boss name, the bar key, whose text the
+   * framework RP's HUD hides (the name is part of the image, L45).
+   */
   applyDisplay() {
-    const name = this.config.display?.name;
-    if (name) this.setBarName(name);
+    if (this.config.display?.barKey) Adapter.setNameTag(this.entity, "");
+    else if (this.config.display?.name) this.setBarName(this.config.display.name);
   }
 
   /**
    * Set the name shown on the boss bar. The framework RP's HUD draws the boss pack's bar image
-   * textures/behemoth/bossbars/<name without colour codes>.png for it (L45).
+   * textures/behemoth/bossbars/<name without colour codes>.png for it (L45). Ignored for bosses
+   * with a custom bar image (display.barKey): their image carries the name.
    * @param {string} text
    */
   setBarName(text) {
-    Adapter.setNameTag(this.entity, text);
+    if (!this.config.display?.barKey) Adapter.setNameTag(this.entity, text);
   }
 
   /**

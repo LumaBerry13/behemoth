@@ -872,6 +872,18 @@ console.log("\n33. partVisibility, grab, damageCause, onAttack from a cancelled 
     const fs = await import("node:fs");
     const barFile = new URL("../../packs/behemoth_demo/RP/textures/behemoth/bossbars/Test Boss.png", import.meta.url);
     check("demo pack ships its (empty) boss bar image under the colour-free name", fs.existsSync(barFile));
+    // A boss with custom bar art (display.barKey) has no name tag: the bar shows the entity's
+    // minecraft:boss name (the key), whose text the HUD hides; bar title changes are ignored.
+    const display = d.boss.config.display;
+    d.boss.config.display = { ...display, barKey: "bhmbar_test_boss" };
+    d.boss.applyDisplay();
+    check("custom-bar boss has no name tag", d.e.nameTag === "", d.e.nameTag);
+    d.boss.setBarName("Other title");
+    check("custom-bar boss ignores bar title changes", d.e.nameTag === "", d.e.nameTag);
+    d.boss.config.display = display;
+    d.boss.applyDisplay();
+    const hud = fs.readFileSync(new URL("../../packs/behemoth/RP/ui/hud_screen.json", import.meta.url), "utf8");
+    check("HUD hides the text of bhmbar_ bar keys", hud.includes("((#bossName - 'bhmbar_') = #bossName)"));
   }
 }
 

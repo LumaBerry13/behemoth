@@ -106,8 +106,11 @@ export interface BossConfig {
   /**
    * name: also the boss bar text. The framework RP's HUD draws textures/behemoth/bossbars/<name>.png
    * (colour codes removed) around the bar; boss packs ship it (an empty image for no custom bar).
+   * barKey: the boss has a custom bar image textures/behemoth/bossbars/<barKey>.png. barKey must start
+   * with "bhmbar_" and equal the entity's minecraft:boss name; the boss gets no name tag and the HUD
+   * hides the bar text (the image carries the name). bossBar title changes are ignored then.
    */
-  display?: { name?: string; bossBar?: boolean };
+  display?: { name?: string; bossBar?: boolean; barKey?: string };
   stats?: {
     health?: number;
     armor?: number;

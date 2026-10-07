@@ -30,7 +30,9 @@ def make_folder(base: Path) -> Path:
     (f / "sounds").mkdir()
     for n in ("roar_1.ogg", "roar_2.ogg", "growl.ogg"):
         (f / "sounds" / n).write_bytes(b"OggS")
-    (f / "behemoth.json").write_text(json.dumps({"mobs": {"kitchen_spark": {"identifier": "kitchen:spark"}}}))
+    (f / "behemoth.json").write_text(json.dumps({"mobs": {
+        "kitchen_spark": {"identifier": "kitchen:spark"},
+        "kitchen_boss": {"bossbar_layout": {"width": 182, "y": -2}}}}))
     return f
 
 
@@ -73,8 +75,24 @@ def test_sounds_bossbar_and_textures(folder):
     rp = folder / "pack" / "RP"
     defs = json.loads((rp / "sounds" / "sound_definitions.json").read_text(encoding="utf-8"))["sound_definitions"]
     assert len(defs["kitchen_sink.roar"]["sounds"]) == 2 and "kitchen_sink.growl" in defs
-    assert (rp / "textures" / "behemoth" / "bossbars" / "Kitchen Sink.png").exists()
     assert (rp / "textures" / "entity" / "kitchen.png").exists()
+
+
+def test_custom_boss_bar_key_and_layout(folder):
+    # A custom bar: the bar name is a key (HUD hides its text), the image is placed on the HUD canvas.
+    bars = folder / "pack" / "RP" / "textures" / "behemoth" / "bossbars"
+    assert not (bars / "Kitchen Sink.png").exists()
+    bar = Image.open(bars / "bhmbar_test_kitchen.png")
+    assert bar.size == (2048, 512)                                   # 512x128 GUI units at 4 px
+    # 728x80 px art, 182 units wide -> 728x80 px on the canvas, centred at x 1024, y (64 - 2) * 4
+    assert bar.getpixel((1024, 248))[3] == 128 and bar.getpixel((660, 208))[3] == 128
+    assert bar.getpixel((659, 248))[3] == 0 and bar.getpixel((1024, 207))[3] == 0
+    ent = json.loads((folder / "pack" / "BP" / "entities" / "kitchen_boss.json").read_text(encoding="utf-8"))
+    assert ent["minecraft:entity"]["components"]["minecraft:boss"]["name"] == "bhmbar_test_kitchen"
+    cfg = (folder / "pack" / "BP" / "scripts" / "bosses" / "kitchen_boss.js").read_text(encoding="utf-8")
+    assert 'barKey: "bhmbar_test_kitchen"' in cfg and 'name: "Kitchen Sink"' in cfg
+    report = (folder / "report.md").read_text(encoding="utf-8")
+    assert "182 GUI units wide" in report and "cut off" not in report
 
 
 def test_configs_pass_the_js_validator(folder):

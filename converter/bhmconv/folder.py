@@ -137,7 +137,7 @@ def build_job(folder: Path) -> tuple[dict, Callable[[dict], None], list[str]]:
             "geometry": rel(found["geometry"]), "animations": [rel(a) for a in found["animations"]],
             "animation_controllers": [rel(a) for a in found["animation_controllers"]], "textures": textures,
             **({"bossbar": rel(found["bossbar"])} if found["bossbar"] else {}),
-            **{k: ms[k] for k in ("identifier", "bone_aliases", "blades", "always_animate", "tuning") if k in ms},
+            **{k: ms[k] for k in ("identifier", "bone_aliases", "blades", "always_animate", "tuning", "bossbar_layout") if k in ms},
         })
     if not specs and not problems:
         problems.append("no mob folders found (a folder named after a MythicMobs mob id, holding its Bedrock files)")

@@ -4,15 +4,25 @@
   // Behemoth custom boss bars (design doc L45, docs/converting.md section 6).
   // Every boss bar gets an image picked by the name on the bar:
   //   textures/behemoth/bossbars/<name>.png
-  // The game strips colour codes from boss bar names, so <name> is the plain name.
-  // Boss packs ship that file (the converter writes the boss's bossbar.png there, or an empty
-  // transparent image). The framework ships empty images for the vanilla Wither and Ender Dragon.
-  // A name without a file shows the game's missing-texture square.
-  // The canvas is 256x64 GUI units centred on the vanilla bar (bar at x 37-219, y 28-33), so it
-  // scales with the screen and GUI scale like the vanilla bar; the boss name is drawn above it.
+  // - A boss with custom art has a bar KEY as its name (minecraft:boss name "bhmbar_<id>", no name
+  //   tag, config display.barKey). The bar text is hidden for those names: the art carries the name.
+  // - Any other bar shows its name as usual (the game strips colour codes, so <name> is the plain
+  //   name). Boss packs ship an empty image for it; the framework ships empty images for the vanilla
+  //   Wither and Ender Dragon. A name without a file shows the game's missing-texture square.
+  // The canvas is 512x128 GUI units centred on the vanilla bar (bar at x 165-347, y 60-65), so it
+  // scales with the screen and GUI scale like the vanilla bar. The converter places the boss's
+  // bossbar.png on it (size and position from behemoth.json bossbar_layout).
 
   "boss_name_panel": {
-    "layer": 30
+    "layer": 30,
+    "bindings": [
+      { "binding_name": "#bossName", "binding_type": "collection", "binding_collection_name": "boss_bars" },
+      {
+        "binding_type": "view",
+        "source_property_name": "((#bossName - 'bhmbar_') = #bossName)",
+        "target_property_name": "#visible"
+      }
+    ]
   },
 
   "boss_health_panel": {
@@ -24,10 +34,10 @@
           {
             "bhm_boss_bar_image": {
               "type": "image",
-              "size": [ 256, 64 ],
+              "size": [ 512, 128 ],
               "anchor_from": "top_middle",
               "anchor_to": "top_middle",
-              "offset": [ 0, -18 ],
+              "offset": [ 0, -50 ],
               "layer": 20,
               "allow_debug_missing_texture": false,
               "bindings": [

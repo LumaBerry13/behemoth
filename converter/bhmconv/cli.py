@@ -92,6 +92,46 @@ def _png_1x1_transparent() -> bytes:
 
 # Empty boss bar image for bosses without bossbar.png (framework HUD, L45).
 EMPTY_PNG = _png_1x1_transparent()
+
+# Boss bar names starting with this are keys: the framework HUD hides their text (packs/behemoth/RP/ui/hud_screen.json).
+BAR_KEY_PREFIX = "bhmbar_"
+# The HUD's boss bar canvas in GUI units (vanilla bar at x 165-347, y 60-65) and the pixels per unit we draw at.
+BAR_CANVAS = (512, 128)
+BAR_PX = 4
+# Where bossbar.png goes at scale 1, x 0, y 0: a 256x64 area centred on the bar (docs/bossbar_template.png).
+BAR_DEFAULT_WIDTH = 256
+BAR_DEFAULT_CENTRE = (256, 64)
+
+
+def place_boss_bar(source: Path, dest: Path, layout: dict) -> list[str]:
+    """Draws bossbar.png onto the HUD's 512x128 canvas (2048x512 px). layout {width | scale, x, y}
+    (behemoth.json mobs.<MOB>.bossbar_layout): width in GUI units (the vanilla bar is 182 wide), or
+    scale (1 = 256 units, the template's width); the aspect is kept. x/y move it in GUI units
+    (+x right, +y down) from centred on the template area. Returns report notes."""
+    from PIL import Image  # converter/requirements.txt
+
+    width = float(layout["width"]) if "width" in layout else BAR_DEFAULT_WIDTH * float(layout.get("scale", 1))
+    dx, dy = float(layout.get("x", 0)), float(layout.get("y", 0))
+    art = Image.open(source).convert("RGBA")
+    w = max(1, round(width * BAR_PX))
+    h = max(1, round(w * art.height / art.width))
+    canvas = Image.new("RGBA", (BAR_CANVAS[0] * BAR_PX, BAR_CANVAS[1] * BAR_PX), (0, 0, 0, 0))
+    cx, cy = (BAR_DEFAULT_CENTRE[0] + dx) * BAR_PX, (BAR_DEFAULT_CENTRE[1] + dy) * BAR_PX
+    left, top = round(cx - w / 2), round(cy - h / 2)
+    # Pixel art stays crisp when enlarged; smooth filtering when shrunk.
+    sized = art.resize((w, h), Image.NEAREST if w >= art.width else Image.LANCZOS)
+    # alpha_composite needs a non-negative destination: crop what sticks out on the left/top.
+    canvas.alpha_composite(sized, (max(0, left), max(0, top)), (max(0, -left), max(0, -top)))
+    canvas.save(dest)
+    notes = []
+    if layout:
+        notes.append(f"boss bar layout: {width:g} GUI units wide, x {dx:g}, y {dy:g}")
+    if left < 0 or top < 0 or left + w > canvas.width or top + h > canvas.height:
+        notes.append(f"boss bar image is cut off at the canvas edge ({BAR_CANVAS[0]}x{BAR_CANVAS[1]} GUI units): "
+                     "make bossbar_layout smaller or move it")
+    return notes
+
+
 from .bake import Skeleton, bake_animation, rest_position
 from .entity import (
     add_scripted_death, build_base_controller, build_render_controller, complete_behavior, death_duration_ticks,
@@ -159,7 +199,8 @@ def _manifests(pack: dict, display: str) -> tuple[dict, dict]:
 
 
 ENTITY_KEYS = ("behavior", "client_entity", "geometry", "animations", "animation_controllers", "textures",
-               "bone_aliases", "blades", "identifier", "auto", "bossbar", "link_all_animations", "always_animate")
+               "bone_aliases", "blades", "identifier", "auto", "bossbar", "bossbar_layout", "link_all_animations",
+               "always_animate")
 
 
 def _entity_specs(job: dict) -> list[dict]:
@@ -273,7 +314,7 @@ def convert(job_path: Path | None = None, out: Path | None = None, *, job: dict 
 
 
 NEEDS = ("unsupported", "has no mapping", "not in the bedrock geometry", "skipped (not converted", "could not be read",
-         "not supported", "no matching animation", "was not found", "put ", "does not match")
+         "not supported", "no matching animation", "was not found", "put ", "does not match", "is cut off")
 APPROX = ("[verify]", "approximat", "dropped", "capped", "→ grab", "mirrored", "÷", "folded", "cannot", "only the bar title",
           "drawn as", "skipped `")
 
@@ -508,11 +549,17 @@ def build_entity(spec: dict, job: dict, src: Path, out: Path, mobs: dict, skills
               **({"stopDistance": tuning["stop_distance"]} if "stop_distance" in tuning else {})}
         if tb["noAI"]:
             notes.append("NoAI → ai.default frozen, faceTarget false (effect entity)")
+    # Boss bar (framework HUD, L45): the HUD draws textures/behemoth/bossbars/<bar name>.png on every bar.
+    # With a custom bossbar.png the bar name is a key (bhmbar_...) and the HUD hides the bar text; else
+    # the bar shows the plain name (the game strips colour codes) and gets an empty image.
+    bar_key = BAR_KEY_PREFIX + re.sub(r"[^a-z0-9_]", "_", entity_id.lower()) if kind == "boss" and spec.get("bossbar") else ""
+    bar_name = bar_key or re.sub(r"§.", "", tb["display"])
     config = {
         "schemaVersion": 1,
         "id": entity_id,
         "kind": kind,
-        "display": {"name": tb["display"], **({"bossBar": True} if kind == "boss" else {})},
+        "display": {"name": tb["display"], **({"bossBar": True} if kind == "boss" else {}),
+                    **({"barKey": bar_key} if bar_key else {})},
         "stats": {"health": tb["health"], "scale": 1,
                   **({"movementSpeed": movement_speed(behavior)} if movement_speed(behavior) else {}),
                   **({"damageMultiplier": tuning["damage_multiplier"]} if "damage_multiplier" in tuning else {}),
@@ -539,7 +586,7 @@ def build_entity(spec: dict, job: dict, src: Path, out: Path, mobs: dict, skills
     # ---------------- entities ----------------
     idle, walk = ctx.base_states["idle"], ctx.base_states["walk"]
     ident_override = spec.get("identifier")
-    bp_entity = patch_behavior(behavior, len(idle), len(walk), tb["bossBarRange"], notes, tb["display"],
+    bp_entity = patch_behavior(behavior, len(idle), len(walk), tb["bossBarRange"], notes, bar_key or tb["display"],
                                kind=kind, identifier=ident_override, tint=ctx.uses_tint, parts=len(ctx.parts))
     _write(out / "BP" / "entities" / f"{boss}.json", json.dumps(bp_entity, indent=2))
     rp = out / "RP"
@@ -561,13 +608,10 @@ def build_entity(spec: dict, job: dict, src: Path, out: Path, mobs: dict, skills
     for f, dest in spec.get("textures", {}).items():
         shutil.copyfile(src / f, _mk(rp / dest))
     if kind == "boss":
-        # The framework HUD draws textures/behemoth/bossbars/<bar name>.png on every boss bar; the game
-        # strips colour codes from bar names. No bossbar.png → an empty image (no missing-texture square).
-        bar_name = re.sub(r"§.", "", tb["display"])
         bar_file = _mk(rp / "textures" / "behemoth" / "bossbars" / f"{bar_name}.png")
         if spec.get("bossbar"):
-            shutil.copyfile(src / spec["bossbar"], bar_file)
-            notes.append(f"custom boss bar: {spec['bossbar']} drawn around the boss bar '{bar_name}'")
+            notes.extend(place_boss_bar(src / spec["bossbar"], bar_file, spec.get("bossbar_layout") or {}))
+            notes.append(f"custom boss bar: {spec['bossbar']} (bar key '{bar_name}', the bar shows no name text)")
         else:
             bar_file.write_bytes(EMPTY_PNG)
 

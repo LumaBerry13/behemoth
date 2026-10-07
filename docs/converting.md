@@ -41,7 +41,7 @@ private/Wendigo/
 │   ├── wendigo.geo.json        geometry
 │   ├── wendigo.animation.json  animations (several files are fine)
 │   ├── wendigo.png             texture (file name = the last part of the client entity's texture path)
-│   └── bossbar.png             optional custom boss bar (section 6)
+│   └── bossbar.png             optional custom boss bar art, with the name (section 6)
 ├── sounds/                     optional .ogg files (section 5)
 ├── pack_icon.png               optional
 └── behemoth.json               optional settings (section 7); the converter adds the pack UUIDs here
@@ -101,23 +101,43 @@ Sounds the YAML does not use still get packaged as `<pack id>.<name>`.
 
 ## 6. Custom boss bar
 
-Put `bossbar.png` in the boss's folder. It is drawn around the vanilla boss bar. Without it the boss
-gets an empty image (the plain vanilla bar).
+Put `bossbar.png` in the boss's folder: your bar art **including the boss name**. It is drawn around
+the vanilla boss bar (the health part stays the game's own bar). The game's name text is hidden for
+this boss, so the name you draw is the only one shown.
 
-- **Canvas: 256 × 64**, centred on the bar; draw it at **1024 × 256** (4×) or any size with the same
-  4 : 1 shape. Start from [`bossbar_template.png`](bossbar_template.png). It is sized in GUI units, so it
-  scales with the screen and the GUI scale exactly like the vanilla bar.
-- The vanilla bar (the part that shows health) sits at x 37–219, y 28–33 of the canvas (x 148–876,
-  y 112–132 at 1024 × 256). Leave that area transparent so the health shows through; decorate around it
-  (frames, skulls, horns, ornaments at the ends).
-- The boss name is drawn by the game above the bar, at y 18–27 (y 72–108 at 4×), on top of your image.
-- The image is picked by the **name on the bar** (`textures/behemoth/bossbars/<name>.png`; the game
-  removes colour codes from bar names, and so does the converter). Keep `Display` names plain.
-- Every boss bar looks for an image, so a boss **without** a file shows a small missing-texture square.
-  Converted bosses always get one (yours or an empty one); the framework ships empty ones for the
-  vanilla Wither and Ender Dragon (English names). A boss from another add-on can get one by adding an
-  empty `textures/behemoth/bossbars/<its name>.png` to any resource pack.
-- A skill that renames the bar (`barSet`) needs an image for the new name too.
+- The simplest start is [`bossbar_template.png`](bossbar_template.png) (1024 × 256). The health bar sits at
+  x 148–876, y 112–132 of it. Leave that area transparent so the health shows through, and decorate
+  around it (frame, name, skulls, horns).
+- Any other size works too, for example a tight frame around the bar. Size and position are set in the
+  finishing touch below.
+- Without `bossbar.png` the boss gets the plain vanilla bar with its `Display` name.
+- How it works: the bar's name becomes a key (`bhmbar_<entity id>`), the framework's HUD hides text
+  starting with `bhmbar_`, and it draws `textures/behemoth/bossbars/bhmbar_<entity id>.png`. Because
+  the image carries the name, skills that rename the bar (`barSet`) have no effect on this boss.
+- Bosses from other add-ons show a small missing-texture square on their bar unless some resource pack
+  has an empty `textures/behemoth/bossbars/<their bar name>.png`. The framework ships these for the
+  vanilla Wither and Ender Dragon.
+
+### Finishing touch: size and position
+
+After the pack is built and you have seen it in game, adjust the art in `behemoth.json`, run the
+converter again and deploy:
+
+```json
+"mobs": { "WENDIGO": { "bossbar_layout": { "width": 196, "x": 0, "y": -1.5 } } }
+```
+
+- Units are GUI pixels. The vanilla bar is **182 wide and 5 tall**, so a frame drawn 1 pixel per GUI
+  pixel around it is `"width"` = the image's own width in pixels.
+- `width`: how wide the art is drawn; the height follows the image's shape. You can use `"scale"`
+  instead: 1 = 256 wide, which is the template's width.
+- `x`, `y`: move the art (+x right, +y down). At 0, 0 the art is centred on the template's area, whose
+  centre is 1.5 below the bar's centre. A frame centred on the bar therefore needs `"y": -1.5`.
+- The art can be up to 512 × 128 around the bar. If it goes past that edge, the report says so under
+  "Needs you".
+- It follows the screen size and GUI scale like the vanilla bar.
+- To check: `npm run convert -- private/<Boss>`, `npm run deploy`, rejoin the world, then
+  `/behemoth` → Spawn a boss.
 
 ## 7. behemoth.json (optional settings)
 
@@ -133,6 +153,7 @@ Created on the first run with the pack identity; everything else is optional.
       "bone_aliases": { "stones_modelpart": "stones" },
       "blades": ["sword"],
       "always_animate": ["passive"],
+      "bossbar_layout": { "width": 196, "x": 0, "y": -1.5 },
       "tuning": { "stop_distance": 2.5 }
     }
   },
