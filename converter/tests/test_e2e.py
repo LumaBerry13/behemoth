@@ -90,6 +90,9 @@ def test_archivist_style_mappings(out):
     vis = rc["render_controllers"]["controller.render.kitchen.bhm"]["part_visibility"]
     assert vis[0] == {"*": True} and "arm" in vis[1]
     assert "bhm:hidden_parts" in boss_entity["minecraft:entity"]["description"]["properties"]
+    bar = out / "RP" / "textures" / "behemoth" / "bossbars" / "Kitchen Sink.png"
+    assert bar.exists() and bar.read_bytes()[1:4] == b"PNG"    # no bossbar.png -> empty image
+    assert not (out / "RP" / "textures" / "behemoth" / "bossbars" / "Spark.png").exists()  # minions have no bar
     index = (out / "BP" / "scripts" / "bosses" / "index.js").read_text(encoding="utf-8")
     assert "export default [kitchen, kitchen_spark]" in index
     lang = (out / "RP" / "texts" / "en_US.lang").read_text(encoding="utf-8")

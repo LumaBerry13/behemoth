@@ -77,6 +77,21 @@ REPO = Path(__file__).resolve().parents[2]
 CONNECTOR = REPO / "connector" / "connector.js"
 FRAMEWORK = json.loads((REPO / "connector" / "framework.json").read_text(encoding="utf-8"))
 MARKER = ".bhmconv-output"
+
+
+def _png_1x1_transparent() -> bytes:
+    import struct
+    import zlib
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 6, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(b"\x00\x00\x00\x00\x00")) + chunk(b"IEND", b""))
+
+
+# Empty boss bar image for bosses without bossbar.png (framework HUD, L45).
+EMPTY_PNG = _png_1x1_transparent()
 from .bake import Skeleton, bake_animation, rest_position
 from .entity import (
     add_scripted_death, build_base_controller, build_render_controller, complete_behavior, death_duration_ticks,
@@ -497,8 +512,7 @@ def build_entity(spec: dict, job: dict, src: Path, out: Path, mobs: dict, skills
         "schemaVersion": 1,
         "id": entity_id,
         "kind": kind,
-        "display": {"name": tb["display"], **({"bossBar": True} if kind == "boss" else {}),
-                    **({"bossBarImage": True} if spec.get("bossbar") and kind == "boss" else {})},
+        "display": {"name": tb["display"], **({"bossBar": True} if kind == "boss" else {})},
         "stats": {"health": tb["health"], "scale": 1,
                   **({"movementSpeed": movement_speed(behavior)} if movement_speed(behavior) else {}),
                   **({"damageMultiplier": tuning["damage_multiplier"]} if "damage_multiplier" in tuning else {}),
@@ -546,9 +560,16 @@ def build_entity(spec: dict, job: dict, src: Path, out: Path, mobs: dict, skills
         shutil.copyfile(src / f, _mk(rp / "animation_controllers" / Path(f).name))
     for f, dest in spec.get("textures", {}).items():
         shutil.copyfile(src / f, _mk(rp / dest))
-    if spec.get("bossbar") and kind == "boss":
-        shutil.copyfile(src / spec["bossbar"], _mk(rp / "textures" / "behemoth" / "bossbars" / f"{tb['display']}.png"))
-        notes.append(f"custom boss bar: {spec['bossbar']} drawn over the vanilla bar while the bar reads '{tb['display']}'")
+    if kind == "boss":
+        # The framework HUD draws textures/behemoth/bossbars/<bar name>.png on every boss bar; the game
+        # strips colour codes from bar names. No bossbar.png → an empty image (no missing-texture square).
+        bar_name = re.sub(r"§.", "", tb["display"])
+        bar_file = _mk(rp / "textures" / "behemoth" / "bossbars" / f"{bar_name}.png")
+        if spec.get("bossbar"):
+            shutil.copyfile(src / spec["bossbar"], bar_file)
+            notes.append(f"custom boss bar: {spec['bossbar']} drawn around the boss bar '{bar_name}'")
+        else:
+            bar_file.write_bytes(EMPTY_PNG)
 
     return {"boss": boss, "kind": kind, "entity_id": entity_id, "display": tb["display"], "notes": notes,
             "requires": requires, "skill_count": len(tb["skills"]), "anim_count": len(action_anims),

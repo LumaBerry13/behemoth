@@ -13,8 +13,6 @@ import { rotateYaw, distance } from "./vec.js";
 /** @typedef {import("../types/config").AnimationData} AnimationData */
 
 const DEFAULT_TARGET_RANGE = 32;
-/** Invisible name suffix (three format resets) that switches on the custom boss bar overlay (RP ui/hud_screen.json). */
-export const BOSS_BAR_MARKER = "§r§r§r";
 
 export class BossInstance {
   /**
@@ -224,12 +222,12 @@ export class BossInstance {
   }
 
   /**
-   * Set the name shown on the boss bar. Bosses with a custom bar image (display.bossBarImage)
-   * end it with the invisible marker the framework RP's HUD looks for (L45).
+   * Set the name shown on the boss bar. The framework RP's HUD draws the boss pack's bar image
+   * textures/behemoth/bossbars/<name without colour codes>.png for it (L45).
    * @param {string} text
    */
   setBarName(text) {
-    Adapter.setNameTag(this.entity, this.config.display?.bossBarImage ? text + BOSS_BAR_MARKER : text);
+    Adapter.setNameTag(this.entity, text);
   }
 
   /**

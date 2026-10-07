@@ -103,15 +103,11 @@ export interface BossConfig {
    * typically summoned by a boss and bound to it.
    */
   kind?: "boss" | "minion";
-  display?: {
-    name?: string;
-    bossBar?: boolean;
-    /**
-     * The boss pack ships a custom boss bar image textures/behemoth/bossbars/<name>.png,
-     * drawn over the vanilla bar by the framework RP's HUD. The converter sets it for <MOB>/bossbar.png.
-     */
-    bossBarImage?: boolean;
-  };
+  /**
+   * name: also the boss bar text. The framework RP's HUD draws textures/behemoth/bossbars/<name>.png
+   * (colour codes removed) around the bar; boss packs ship it (an empty image for no custom bar).
+   */
+  display?: { name?: string; bossBar?: boolean };
   stats?: {
     health?: number;
     armor?: number;

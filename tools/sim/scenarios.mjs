@@ -866,15 +866,12 @@ console.log("\n33. partVisibility, grab, damageCause, onAttack from a cancelled 
     mc.tick(2);
     check("a cancelled vanilla swing still fires onAttack, once per tick", attacks === 1, `${attacks}`);
 
-    // Custom boss bar image: the name carries the invisible marker the HUD overlay looks for.
-    d.boss.config.display.bossBarImage = true;
+    // Custom boss bar: the HUD picks the image by the plain bar name; the demo pack ships it.
     d.boss.applyDisplay();
-    check("boss bar image: name ends with the overlay marker", d.e.nameTag === "§cTest Boss§r§r§r", JSON.stringify(d.e.nameTag));
-    d.run("demo_bar", 2);
-    check("…also when a skill changes the bar title", d.e.nameTag.endsWith("§r§r§r") && d.e.nameTag.includes("%)"), JSON.stringify(d.e.nameTag));
-    delete d.boss.config.display.bossBarImage;
-    d.boss.applyDisplay();
-    check("no image: plain name (no overlay, no missing-texture square)", d.e.nameTag === "§cTest Boss");
+    check("boss bar name is the display name (no markers)", d.e.nameTag === "§cTest Boss");
+    const fs = await import("node:fs");
+    const barFile = new URL("../../packs/behemoth_demo/RP/textures/behemoth/bossbars/Test Boss.png", import.meta.url);
+    check("demo pack ships its (empty) boss bar image under the colour-free name", fs.existsSync(barFile));
   }
 }
 

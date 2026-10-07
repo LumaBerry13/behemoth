@@ -101,17 +101,23 @@ Sounds the YAML does not use still get packaged as `<pack id>.<name>`.
 
 ## 6. Custom boss bar
 
-Put `bossbar.png` in the boss's folder. It is drawn around the vanilla boss bar, and the boss's name
-moves below the bar. Bosses without an image keep the normal vanilla bar.
+Put `bossbar.png` in the boss's folder. It is drawn around the vanilla boss bar. Without it the boss
+gets an empty image (the plain vanilla bar).
 
 - **Canvas: 256 × 64**, centred on the bar; draw it at **1024 × 256** (4×) or any size with the same
-  4 : 1 shape. Start from [`bossbar_template.png`](bossbar_template.png).
+  4 : 1 shape. Start from [`bossbar_template.png`](bossbar_template.png). It is sized in GUI units, so it
+  scales with the screen and the GUI scale exactly like the vanilla bar.
 - The vanilla bar (the part that shows health) sits at x 37–219, y 28–33 of the canvas (x 148–876,
   y 112–132 at 1024 × 256). Leave that area transparent so the health shows through; decorate around it
-  (frames, skulls, horns above, ornaments at the ends).
-- The name is drawn below the bar at y 36–45 (y 144–180 at 4×); keep that area light.
-- Keep the boss's `Display` name plain (letters, digits, spaces): the image file is named after it.
-  A skill that renames the bar (`barSet`) keeps the image only while the new name has its own image file.
+  (frames, skulls, horns, ornaments at the ends).
+- The boss name is drawn by the game above the bar, at y 18–27 (y 72–108 at 4×), on top of your image.
+- The image is picked by the **name on the bar** (`textures/behemoth/bossbars/<name>.png`; the game
+  removes colour codes from bar names, and so does the converter). Keep `Display` names plain.
+- Every boss bar looks for an image, so a boss **without** a file shows a small missing-texture square.
+  Converted bosses always get one (yours or an empty one); the framework ships empty ones for the
+  vanilla Wither and Ender Dragon (English names). A boss from another add-on can get one by adding an
+  empty `textures/behemoth/bossbars/<its name>.png` to any resource pack.
+- A skill that renames the bar (`barSet`) needs an image for the new name too.
 
 ## 7. behemoth.json (optional settings)
 
