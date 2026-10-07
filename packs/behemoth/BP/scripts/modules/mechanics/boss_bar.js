@@ -15,6 +15,6 @@ export default {
   },
   execute(ctx, _targets, o) {
     if (o.reset) ctx.boss.applyDisplay();
-    else ctx.services.adapter.setNameTag(ctx.caster, String(o.title));
+    else ctx.boss.setBarName(String(o.title));
   },
 };

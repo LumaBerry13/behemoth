@@ -101,15 +101,17 @@ Sounds the YAML does not use still get packaged as `<pack id>.<name>`.
 
 ## 6. Custom boss bar
 
-Put `bossbar.png` in the boss's folder. It is drawn over the vanilla boss bar while the bar shows the
-boss's name.
+Put `bossbar.png` in the boss's folder. It is drawn around the vanilla boss bar, and the boss's name
+moves below the bar. Bosses without an image keep the normal vanilla bar.
 
-- The image covers the whole 182 × 20 boss panel: the name text in the top half, the vanilla bar at
-  rows 10–15. Draw it at any size with the same 91 : 10 shape, e.g. **728 × 80** (4×). Start from
-  [`bossbar_template.png`](bossbar_template.png).
-- Transparent pixels show the vanilla bar and name through it.
-- The image is matched by the **name on the bar**, so keep the boss's `Display` name plain (letters,
-  digits, spaces). A skill that changes the bar title (`barSet`) hides the image while the title differs.
+- **Canvas: 256 × 64**, centred on the bar; draw it at **1024 × 256** (4×) or any size with the same
+  4 : 1 shape. Start from [`bossbar_template.png`](bossbar_template.png).
+- The vanilla bar (the part that shows health) sits at x 37–219, y 28–33 of the canvas (x 148–876,
+  y 112–132 at 1024 × 256). Leave that area transparent so the health shows through; decorate around it
+  (frames, skulls, horns above, ornaments at the ends).
+- The name is drawn below the bar at y 36–45 (y 144–180 at 4×); keep that area light.
+- Keep the boss's `Display` name plain (letters, digits, spaces): the image file is named after it.
+  A skill that renames the bar (`barSet`) keeps the image only while the new name has its own image file.
 
 ## 7. behemoth.json (optional settings)
 

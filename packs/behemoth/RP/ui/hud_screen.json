@@ -1,11 +1,31 @@
 {
   "namespace": "hud",
 
-  // Behemoth custom boss bars: an image drawn over the vanilla boss bar, chosen by the
-  // name the bar shows: textures/behemoth/bossbars/<boss bar name>.png (boss packs ship it;
-  // the converter copies <MOB>/bossbar.png there). Bars without an image show nothing extra.
-  // The image covers the whole 182x20 boss panel: name text at the top, bar at y 10-15
-  // (template: docs/bossbar_template.png).
+  // Behemoth custom boss bars (design doc L45, docs/converting.md section 6).
+  // A boss with a bar image (config display.bossBarImage) ends its name with the invisible
+  // marker "§r§r§r". Only bars whose name carries the marker get the overlay, so vanilla
+  // bosses and bosses without an image look unchanged (no missing-texture square).
+  // The overlay is a 256x64 canvas centred on the bar: the vanilla bar (182x5) sits at
+  // x 37-219, y 28-33 of it; the boss name is drawn below the bar at y 36.
+  // Image: textures/behemoth/bossbars/<boss name without the marker>.png (shipped by the boss pack).
+
+  "boss_name_panel": {
+    "modifications": [
+      {
+        "array_name": "bindings",
+        "operation": "insert_back",
+        "value": [
+          { "binding_name": "#bossName", "binding_type": "collection", "binding_collection_name": "boss_bars" },
+          {
+            "binding_type": "view",
+            "source_property_name": "((#bossName - '§r§r§r') = #bossName)",
+            "target_property_name": "#visible"
+          }
+        ]
+      }
+    ]
+  },
+
   "boss_health_panel": {
     "modifications": [
       {
@@ -13,19 +33,56 @@
         "operation": "insert_back",
         "value": [
           {
-            "bhm_boss_bar_overlay": {
-              "type": "image",
-              "size": [ 182, 20 ],
+            "bhm_boss_bar": {
+              "type": "panel",
+              "size": [ 256, 64 ],
               "anchor_from": "top_middle",
               "anchor_to": "top_middle",
+              "offset": [ 0, -18 ],
               "layer": 20,
-              "allow_debug_missing_texture": false,
               "bindings": [
                 { "binding_name": "#bossName", "binding_type": "collection", "binding_collection_name": "boss_bars" },
                 {
                   "binding_type": "view",
-                  "source_property_name": "('textures/behemoth/bossbars/' + #bossName)",
-                  "target_property_name": "#texture"
+                  "source_property_name": "(not ((#bossName - '§r§r§r') = #bossName))",
+                  "target_property_name": "#visible"
+                }
+              ],
+              "controls": [
+                {
+                  "bhm_boss_bar_image": {
+                    "type": "image",
+                    "size": [ "100%", "100%" ],
+                    "allow_debug_missing_texture": false,
+                    "bindings": [
+                      { "binding_name": "#bossName", "binding_type": "collection", "binding_collection_name": "boss_bars" },
+                      {
+                        "binding_type": "view",
+                        "source_property_name": "('textures/behemoth/bossbars/' + (#bossName - '§r§r§r'))",
+                        "target_property_name": "#texture"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "bhm_boss_bar_name": {
+                    "type": "label",
+                    "anchor_from": "top_middle",
+                    "anchor_to": "top_middle",
+                    "offset": [ 0, 36 ],
+                    "color": "$boss_name_text_color",
+                    "shadow": true,
+                    "layer": 2,
+                    "text": "#bhm_name",
+                    "bindings": [
+                      { "binding_name": "#bossName", "binding_type": "collection", "binding_collection_name": "boss_bars" },
+                      {
+                        "binding_type": "view",
+                        "source_property_name": "(#bossName - '§r§r§r')",
+                        "target_property_name": "#bhm_name"
+                      }
+                    ]
+                  }
                 }
               ]
             }

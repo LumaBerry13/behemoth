@@ -865,6 +865,16 @@ console.log("\n33. partVisibility, grab, damageCause, onAttack from a cancelled 
     mc.world.afterEvents.entityHitEntity.fire({ damagingEntity: d.e, hitEntity: d.player }); // same swing's hit event
     mc.tick(2);
     check("a cancelled vanilla swing still fires onAttack, once per tick", attacks === 1, `${attacks}`);
+
+    // Custom boss bar image: the name carries the invisible marker the HUD overlay looks for.
+    d.boss.config.display.bossBarImage = true;
+    d.boss.applyDisplay();
+    check("boss bar image: name ends with the overlay marker", d.e.nameTag === "§cTest Boss§r§r§r", JSON.stringify(d.e.nameTag));
+    d.run("demo_bar", 2);
+    check("…also when a skill changes the bar title", d.e.nameTag.endsWith("§r§r§r") && d.e.nameTag.includes("%)"), JSON.stringify(d.e.nameTag));
+    delete d.boss.config.display.bossBarImage;
+    d.boss.applyDisplay();
+    check("no image: plain name (no overlay, no missing-texture square)", d.e.nameTag === "§cTest Boss");
   }
 }
 
