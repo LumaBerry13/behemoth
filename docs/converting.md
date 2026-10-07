@@ -99,6 +99,10 @@ Put the `.ogg` files in `sounds/`. Name each file after the **last part** of the
 
 Sounds the YAML does not use still get packaged as `<pack id>.<name>`.
 
+If the original Java resource pack is in the folder (any sub-folder, e.g. `resource pack/assets/...`),
+its `sounds.json` is read: it says which file belongs to which sound id, so the files can keep their
+original names.
+
 - If the report says a sound "was not found in sounds/", the file name does not match the end of the
   sound id (for example `sr.air_jump` needs `air_jump.ogg`). Rename the file and convert again.
 - Java vanilla sounds (`entity.ender_dragon.flap`) are translated to their Bedrock names for the common
@@ -147,7 +151,10 @@ converter again and deploy:
 
 ## 7. behemoth.json (optional settings)
 
-Created on the first run with the pack identity; everything else is optional.
+The first run creates it, and every run fills in **all** editable entries, empty when unused: `""`,
+`null`, `{}` and `[]` mean "not set". Fill in what you need and run the converter again; your values
+are never changed. Entries in the wrong place (for example `items` inside `pack`) or misspelled stop
+the conversion with a message instead of being ignored. An example with values:
 
 ```json
 {

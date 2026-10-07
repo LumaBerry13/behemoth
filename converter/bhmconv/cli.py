@@ -104,6 +104,11 @@ BAR_DEFAULT_WIDTH = 256
 BAR_DEFAULT_CENTRE = (256, 64)
 
 
+def _plain(text: str) -> str:
+    """Text without colour codes: boss bar names (the bar image is picked by them) and lang names."""
+    return re.sub(r"§[0-9a-fk-or]?", "", text)
+
+
 def place_boss_bar(source: Path, dest: Path, layout: dict) -> list[str]:
     """Draws bossbar.png onto the HUD's 512x128 canvas (2048x512 px). layout {width | scale, x, y}
     (behemoth.json mobs.<MOB>.bossbar_layout): width in GUI units (the vanilla bar is 182 wide), or
@@ -170,8 +175,9 @@ def _pack_identity(job: dict, save, display: str, notes: list[str]) -> dict:
     missing = [k for k in ("bp", "bp_data", "bp_script", "rp", "rp_module") if k not in uuids]
     for k in missing:
         uuids[k] = str(uuid.uuid4())
-    if missing:
+    if missing or job.get("auto"):  # folder mode: also refreshes behemoth.json's list of editable entries
         save(job)
+    if missing:
         notes.append(f"generated pack UUIDs ({', '.join(missing)}) and saved them — keep them stable")
     return pack
 
@@ -282,7 +288,7 @@ def convert(job_path: Path | None = None, out: Path | None = None, *, job: dict 
             shutil.copyfile(src / job["pack_icon"], _mk(out / side / "pack_icon.png"))
     rp = out / "RP"
     _write(rp / "texts" / "en_US.lang", "".join(
-        f"entity.{b['entity_id']}.name={b['display']}\nitem.spawn_egg.entity.{b['entity_id']}.name=Spawn {b['display']}\n"
+        f"entity.{b['entity_id']}.name={_plain(b['display'])}\nitem.spawn_egg.entity.{b['entity_id']}.name=Spawn {_plain(b['display'])}\n"
         for b in built))
     _write(rp / "texts" / "languages.json", '["en_US"]\n')
 
@@ -367,6 +373,25 @@ def build_sounds(job: dict, src: Path, out: Path, notes: list[str]) -> dict[str,
         stem = f.stem if f.stem.lower() in used_last else re.sub(r"_\d+$", "", f.stem)
         groups.setdefault(stem, []).append(f)
     defs, mapping = {}, {}
+    # A Java resource pack's sounds.json in the folder says exactly which files make each sound
+    # ("sr.air_jump" → air_attack_jump.ogg): those events win over guessing from file names.
+    if sf.get("auto"):
+        by_stem = {f.stem.lower(): f for files in groups.values() for f in files}
+        for ns_, event, stems in _java_sound_events(src):
+            files = [by_stem[s] for s in stems if s in by_stem]
+            if not files:
+                continue
+            for f in files:
+                shutil.copyfile(f, _mk(out / "RP" / dest / f.name))
+            defs[event] = {"category": "hostile", "max_distance": 48.0,
+                           "sounds": [{"name": f"{dest}/{f.stem}", "load_on_low_memory": True} for f in files]}
+            mapping[event] = mapping[f"{ns_}:{event}"] = event
+            for f in files:
+                for stem in list(groups):
+                    groups[stem] = [g for g in groups[stem] if g != f]
+        if defs:
+            notes.append(f"sounds: {len(defs)} event(s) named by the resource pack's sounds.json")
+        groups = {k: v for k, v in groups.items() if v}
     for stem, files in groups.items():
         event = f"{prefix}.{stem}"
         mm_ids = [u for u in used if re.split(r"[.:]", u)[-1].lower() == stem.lower()]
@@ -383,8 +408,30 @@ def build_sounds(job: dict, src: Path, out: Path, notes: list[str]) -> dict[str,
             mapping[f"{ns}:{event}"] = event
     _write(out / "RP" / "sounds" / "sound_definitions.json",
            json.dumps({"format_version": "1.14.0", "sound_definitions": defs}, indent=2))
-    notes.append(f"sounds: {sum(len(f) for f in groups.values())} files → {len(defs)} events ({', '.join(sorted(defs))})")
+    notes.append(f"sounds: {len({s['name'] for d in defs.values() for s in d['sounds']})} files → {len(defs)} events "
+                 f"({', '.join(sorted(defs))})")
     return mapping
+
+
+def _java_sound_events(src: Path) -> list[tuple[str, str, list[str]]]:
+    """(namespace, event, [file stems]) from Java resource pack sounds.json files under the folder
+    (assets/<namespace>/sounds.json). Generated output folders are skipped."""
+    found = []
+    for f in sorted(src.rglob("sounds.json")):
+        rel = f.relative_to(src).parts
+        if rel[0] in ("pack", "dist") or len(rel) < 3 or rel[-3] != "assets":
+            continue
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+        except (ValueError, UnicodeDecodeError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        for event, spec in data.items():
+            sounds = spec.get("sounds", []) if isinstance(spec, dict) else []
+            stems = [Path(s if isinstance(s, str) else str(s.get("name", ""))).name.lower() for s in sounds]
+            found.append((rel[-2], str(event), [s for s in stems if s]))
+    return found
 
 
 def _animation_hooks(anim_file: dict, skills: dict, ctx: Context, notes: list[str], tag: str) -> dict[str, str]:
@@ -558,7 +605,7 @@ def build_entity(spec: dict, job: dict, src: Path, out: Path, mobs: dict, skills
     # With a custom bossbar.png the bar name is a key (bhmbar_...) and the HUD hides the bar text; else
     # the bar shows the plain name (the game strips colour codes) and gets an empty image.
     bar_key = BAR_KEY_PREFIX + re.sub(r"[^a-z0-9_]", "_", entity_id.lower()) if kind == "boss" and spec.get("bossbar") else ""
-    bar_name = bar_key or re.sub(r"§.", "", tb["display"])
+    bar_name = bar_key or _plain(tb["display"])
     config = {
         "schemaVersion": 1,
         "id": entity_id,
@@ -591,7 +638,7 @@ def build_entity(spec: dict, job: dict, src: Path, out: Path, mobs: dict, skills
     # ---------------- entities ----------------
     idle, walk = ctx.base_states["idle"], ctx.base_states["walk"]
     ident_override = spec.get("identifier")
-    bp_entity = patch_behavior(behavior, len(idle), len(walk), tb["bossBarRange"], notes, bar_key or tb["display"],
+    bp_entity = patch_behavior(behavior, len(idle), len(walk), tb["bossBarRange"], notes, bar_key or _plain(tb["display"]),
                                kind=kind, identifier=ident_override, tint=ctx.uses_tint, parts=len(ctx.parts))
     _write(out / "BP" / "entities" / f"{boss}.json", json.dumps(bp_entity, indent=2))
     rp = out / "RP"

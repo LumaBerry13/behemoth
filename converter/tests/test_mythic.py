@@ -182,3 +182,9 @@ def test_coloured_dust_maps_to_the_particle_library():
     assert line["o"]["color"] == "#FF0000"
     line = translate_line(parse_skill_line("particle{p=flame;color=#ffffff}"), c, "x")
     assert "color" not in line["o"]  # vanilla particles take no colour
+
+
+def test_display_colour_codes():
+    # &5 → §5 (a broken replacement once wrote "§\x01" and broke the boss bar image and death messages)
+    out = translate_boss("m", {"Display": "&5Steel &lRaider", "Skills": []}, {}, ctx())
+    assert out["display"] == "§5Steel §lRaider"

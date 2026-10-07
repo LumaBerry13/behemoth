@@ -1360,7 +1360,7 @@ def translate_boss(mob_id: str, mob: dict, skills: dict[str, dict], ctx: Context
     return {
         "skills": out_skills,
         "damageModifiers": mods,
-        "display": re.sub(r"&([0-9a-fk-or])", r"§", str(mob.get("Display", mob_id)).strip("'\"")),  # & colour codes
+        "display": re.sub(r"&([0-9a-fk-or])", lambda m: "§" + m.group(1), str(mob.get("Display", mob_id)).strip("'\"")),  # & colour codes
         "health": float(mob.get("Health", 20)),
         "targetRange": float(opts.get("FollowRange", 32)),
         "threat": bool((mob.get("Modules") or {}).get("ThreatTable", False)),

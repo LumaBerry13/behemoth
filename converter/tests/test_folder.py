@@ -121,3 +121,33 @@ def test_check_lists_unsupported(tmp_path, capsys):
     (f / "mobs.yml").write_text(text, encoding="utf-8")
     assert main([str(f), "--check"]) == 2
     assert "frobnicate" in capsys.readouterr().out
+
+
+def test_settings_file_lists_every_entry(folder):
+    data = json.loads((folder / "behemoth.json").read_text(encoding="utf-8"))
+    for key in ("pack", "boss", "mobs", "tuning", "particles", "items", "sounds", "mob_types", "bullets"):
+        assert key in data, key
+    assert data["mobs"]["kitchen_spark"]["identifier"] == "kitchen:spark"           # user value kept
+    assert data["mobs"]["kitchen_boss"]["bossbar_layout"]["width"] == 182          # user value kept
+    assert data["mobs"]["kitchen_spark"]["blades"] == [] and "bossbar_layout" not in data["mobs"]["kitchen_spark"]
+    assert data["tuning"]["stop_distance"] is None and data["tuning"]["trigger_overrides"] == {}
+    assert main([str(folder)]) == 0                                                # the empty entries change nothing
+
+
+def test_misplaced_settings_are_explained(tmp_path, capsys):
+    f = make_folder(tmp_path)
+    (f / "behemoth.json").write_text(json.dumps({"pack": {"items": {"X": "minecraft:shield"}}, "tunning": {}}))
+    assert main([str(f)]) == 1
+    out = capsys.readouterr().out
+    assert "'items' is inside 'pack' but belongs at the top level" in out and "unknown entry 'tunning'" in out
+
+
+def test_java_sounds_json_names_the_events(tmp_path):
+    # A Java resource pack in the folder: its sounds.json says which file is which sound.
+    f = make_folder(tmp_path)
+    assets = f / "resource pack" / "assets" / "kitchen"
+    assets.mkdir(parents=True)
+    (assets / "sounds.json").write_text(json.dumps({"ks.bellow": {"sounds": ["custom/kitchen/growl"]}}))
+    assert main([str(f)]) == 0
+    defs = json.loads((f / "pack" / "RP" / "sounds" / "sound_definitions.json").read_text(encoding="utf-8"))["sound_definitions"]
+    assert defs["ks.bellow"]["sounds"][0]["name"].endswith("/growl") and "kitchen_sink.growl" not in defs

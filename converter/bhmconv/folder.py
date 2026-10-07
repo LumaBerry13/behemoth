@@ -89,12 +89,90 @@ def scan_entity(folder: Path) -> dict:
     return found
 
 
+# behemoth.json: every editable entry, in file order (docs/converting.md section 7). Empty values
+# ("", null, {}, []) mean "not set"; the converter writes all of them so the file shows what can be set.
+PACK_KEYS = ("name", "id", "version", "uuids")
+MOB_TEMPLATE: dict[str, Any] = {"identifier": "", "bone_aliases": {}, "blades": [], "always_animate": [], "tuning": {}}
+BOSSBAR_TEMPLATE: dict[str, Any] = {"width": None, "scale": None, "x": 0, "y": 0}
+TUNING_TEMPLATE: dict[str, Any] = {
+    "damage_multiplier": None, "ignore_difficulty": False, "stop_distance": None, "leash_range": None,
+    "reset_after_no_players": None, "randomskill_mode": "", "trigger_overrides": {}, "option_overrides": {},
+    "extra_lines": {}, "extra_lines_enabled": True,
+}
+TEMPLATE: dict[str, Any] = {"pack": {}, "boss": "", "mobs": {}, "tuning": TUNING_TEMPLATE, "particles": {},
+                            "items": {}, "sounds": {}, "mob_types": {}, "bullets": {}}
+HELP = ("Behemoth converter settings: see docs/converting.md section 7. Empty values (empty text, null, {}, []) "
+        "are ignored. Never change pack.uuids.")
+
+
+def _empty(v: Any) -> bool:
+    return v is None or v == "" or v == {} or v == []
+
+
+def _drop_empty(d: dict) -> dict:
+    """Settings without empty values, recursively through objects (lists are kept as they are)."""
+    out = {}
+    for k, v in d.items():
+        if k == "_help":
+            continue
+        if isinstance(v, dict):
+            v = _drop_empty(v)
+        if not _empty(v):
+            out[k] = v
+    return out
+
+
+def _copy(v: Any) -> Any:
+    return json.loads(json.dumps(v))
+
+
+def with_template(settings: dict, mob_ids: list[str], boss: str) -> dict:
+    """The user's settings (kept as they are) plus every missing editable entry, empty."""
+    out: dict = {"_help": HELP}
+    for key, default in TEMPLATE.items():
+        value = settings.get(key, _copy(default))
+        if key == "tuning" and isinstance(value, dict):
+            value = {**_copy(TUNING_TEMPLATE), **value}
+        if key == "mobs" and isinstance(value, dict):
+            value = dict(value)
+            for mob in mob_ids:
+                have = next((k for k in value if k.lower() == mob.lower()), mob)
+                entry = {**_copy(MOB_TEMPLATE), **(value.get(have) or {})}
+                if mob == boss:
+                    entry["bossbar_layout"] = {**_copy(BOSSBAR_TEMPLATE), **(entry.get("bossbar_layout") or {})}
+                value[have] = entry
+        out[key] = value
+    return out
+
+
+def check_settings(settings: dict) -> list[str]:
+    """Entries in the wrong place or misspelled (they would be ignored silently otherwise)."""
+    problems = []
+    for key in settings:
+        if key not in TEMPLATE and key != "_help":
+            problems.append(f"behemoth.json: unknown entry '{key}' (entries: {', '.join(TEMPLATE)})")
+    for key in settings.get("pack") or {}:
+        if key not in PACK_KEYS:
+            where = "at the top level" if key in TEMPLATE else "nowhere (unknown entry)"
+            problems.append(f"behemoth.json: '{key}' is inside 'pack' but belongs {where}")
+    for mob, ms in (settings.get("mobs") or {}).items():
+        for key in ms or {}:
+            if key not in MOB_TEMPLATE and key != "bossbar_layout":
+                problems.append(f"behemoth.json: mobs.{mob} has an unknown entry '{key}' "
+                                f"(entries: {', '.join([*MOB_TEMPLATE, 'bossbar_layout'])})")
+    for key in settings.get("tuning") or {}:
+        if key not in TUNING_TEMPLATE:
+            problems.append(f"behemoth.json: tuning has an unknown entry '{key}' (entries: {', '.join(TUNING_TEMPLATE)})")
+    return problems
+
+
 def build_job(folder: Path) -> tuple[dict, Callable[[dict], None], list[str]]:
     """Returns the job, a function that saves the pack identity into behemoth.json, and problems
     that stop the conversion (empty list = fine)."""
-    problems: list[str] = []
     settings_path = folder / SETTINGS
-    settings: dict = json.loads(settings_path.read_text(encoding="utf-8")) if settings_path.exists() else {}
+    raw_settings: dict = json.loads(settings_path.read_text(encoding="utf-8")) if settings_path.exists() else {}
+    problems: list[str] = check_settings(raw_settings)
+    settings = _drop_empty(raw_settings)
     mobs, skills, text, yaml_names = read_yaml(folder)
     if not yaml_names:
         problems.append("no MythicMobs .yml files next to the mob folders")
@@ -179,7 +257,8 @@ def build_job(folder: Path) -> tuple[dict, Callable[[dict], None], list[str]]:
         job["tuning"] = {**job.get("tuning", {}), **main["tuning"]}
 
     def save(j: dict) -> None:
-        settings["pack"] = j["pack"]
-        settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8", newline="\n")
+        out = with_template(raw_settings, [sp["mob"] for sp in specs], main["mob"])
+        out["pack"] = {**(out.get("pack") or {}), **j["pack"]}
+        settings_path.write_text(json.dumps(out, indent=2) + "\n", encoding="utf-8", newline="\n")
 
     return job, save, []
