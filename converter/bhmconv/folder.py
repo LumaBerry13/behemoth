@@ -157,7 +157,8 @@ def build_job(folder: Path) -> tuple[dict, Callable[[dict], None], list[str]]:
     minions = [dict(s, kind="minion") for s in specs if s is not main]
 
     pack = dict(settings.get("pack") or {})
-    pack.setdefault("name", str(mobs[main["mob"]].get("Display", main["mob"])).strip("'\""))
+    # Colour codes (&5, §5) belong to the in-game name, not to the pack name or id.
+    pack.setdefault("name", re.sub(r"[&§][0-9a-fk-or]", "", str(mobs[main["mob"]].get("Display", main["mob"]))).strip("'\" "))
     pack.setdefault("id", _slug(pack["name"]))
     job = {
         "auto": True,
@@ -172,7 +173,7 @@ def build_job(folder: Path) -> tuple[dict, Callable[[dict], None], list[str]]:
         "minions": minions,
         **({"pack_icon": "pack_icon.png"} if (folder / "pack_icon.png").exists() else {}),
         **({"sound_files": {"folder": "sounds", "auto": True, "dest": pack["id"]}} if (folder / "sounds").is_dir() else {}),
-        **{k: settings[k] for k in ("tuning", "bullets", "particles", "mob_types", "sounds") if k in settings},
+        **{k: settings[k] for k in ("tuning", "bullets", "particles", "mob_types", "sounds", "items") if k in settings},
     }
     if "tuning" in main:
         job["tuning"] = {**job.get("tuning", {}), **main["tuning"]}

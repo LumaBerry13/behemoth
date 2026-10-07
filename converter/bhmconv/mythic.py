@@ -101,7 +101,7 @@ def parse_skill_line(line: str) -> SkillLine:
     if not tokens:
         raise ValueError("empty skill line")
     name, opts = parse_call(tokens[0])
-    sl = SkillLine(raw=line.strip(), mechanic=name, options=opts)
+    sl = SkillLine(raw=line.strip(), mechanic=MECHANIC_ALIASES.get(name.lower(), name), options=opts)
     rest = tokens[1:]
     if name.lower() == "delay" and rest and re.fullmatch(r"\d+", rest[0]):
         sl.options = {"ticks": int(rest[0])}
@@ -167,7 +167,10 @@ MM_DAMAGE_CAUSES = {
     "ENTITY_SWEEP_ATTACK": "entityAttack", "BLOCK_EXPLOSION": "blockExplosion",
     "ENTITY_EXPLOSION": "entityExplosion", "MAGIC": "magic", "LIGHTNING": "lightning",
     "DROWNING": "drowning", "WITHER": "wither", "CONTACT": "contact", "VOID": "void", "THORNS": "thorns",
-    "STARVATION": "starve", "FALLING_BLOCK": "fallingBlock",
+    "STARVATION": "starve", "FALLING_BLOCK": "fallingBlock", "HOT_FLOOR": "magma", "CAMPFIRE": "campfire",
+    "FLY_INTO_WALL": "flyIntoWall", "SONIC_BOOM": "sonicBoom", "FREEZING": "freezing",
+    # Bedrock has no poison cause: poison deals magic damage (so this also covers harming potions).
+    "POISON": "magic",
 }
 
 MM_POTIONS = {
@@ -204,8 +207,28 @@ MM_PARTICLES = {
     "falling_obsidian_tear": "bhm:dust", "dripping_obsidian_tear": "bhm:dust", "ash": "bhm:dust", "white_ash": "bhm:dust",
     "sculk_soul": "bhm:glow", "soul": "bhm:glow",
     "flash": "bhm:flash", "glow": "bhm:glow", "electric_spark": "bhm:spark", "wax_on": "bhm:spark",
+    "reverse_portal": "minecraft:portal_reverse_particle", "campfire_cosy_smoke": "minecraft:campfire_smoke_particle",
+    "campfire_signal_smoke": "minecraft:campfire_tall_smoke_particle", "dragon_breath": "minecraft:dragon_breath_trail",
+    "soul_fire": "minecraft:blue_flame_particle", "enchant": "minecraft:enchanting_table_particle",
+    "enchantment_table": "minecraft:enchanting_table_particle", "note": "minecraft:note_particle",
+    "squid_ink": "minecraft:ink_emitter", "nautilus": "minecraft:conduit_particle", "sneeze": "minecraft:sneeze",
 }
 DEFAULT_PARTICLE = "minecraft:basic_flame_particle"
+
+# Java vanilla sound names → Bedrock sound events (common ones; behemoth.json "sounds" maps the rest).
+JAVA_SOUNDS = {
+    "entity.ender_dragon.flap": "mob.enderdragon.flap", "entity.ender_dragon.growl": "mob.enderdragon.growl",
+    "entity.lightning_bolt.impact": "ambient.weather.lightning.impact", "entity.lightning_bolt.thunder": "ambient.weather.thunder",
+    "entity.zombie.attack_iron_door": "mob.zombie.metal", "entity.zombie.break_wooden_door": "mob.zombie.woodbreak",
+    "entity.generic.explode": "random.explode", "entity.wither.spawn": "mob.wither.spawn",
+    "entity.wither.shoot": "mob.wither.shoot", "entity.wither.ambient": "mob.wither.ambient",
+    "entity.blaze.shoot": "mob.blaze.shoot", "entity.ravager.roar": "mob.ravager.roar",
+    "entity.warden.sonic_boom": "mob.warden.sonic_boom", "entity.evoker.cast_spell": "mob.evocation_illager.cast_spell",
+    "entity.enderman.teleport": "mob.endermen.portal", "entity.arrow.shoot": "random.bow",
+    "entity.item.break": "random.break", "entity.experience_orb.pickup": "random.orb",
+    "entity.firework_rocket.blast": "firework.blast", "block.anvil.land": "random.anvil_land",
+    "block.glass.break": "random.glass", "entity.iron_golem.attack": "mob.irongolem.throw",
+}
 
 # Java entity types → Bedrock ids for `shoot`.
 MM_SHOOT_TYPES = {"ARROW": "minecraft:arrow", "SNOWBALL": "minecraft:snowball", "EGG": "minecraft:egg",
@@ -223,6 +246,11 @@ VANILLA_MOBS = {
     "lightning_bolt", "tnt", "fireball", "small_fireball", "arrow", "bee", "fox", "polar_bear", "hoglin", "zoglin",
     "strider", "warden", "allay", "breeze", "creaking", "goat", "frog", "llama", "horse", "rabbit", "cat", "parrot",
 }
+
+# Other spellings of a mechanic (MythicMobs accepts both).
+MECHANIC_ALIASES = {"effect:sound": "sound", "e:sound": "sound", "e:s": "sound", "s": "sound",
+                    "partvisibility": "partvis", "effect:partvisibility": "partvis",
+                    "removepotion": "potionclear", "clearpotions": "potionclear", "dropitems": "dropitem"}
 
 # Mechanics that only drive ModelEngine / Java behaviour — no Bedrock equivalent needed.
 SKIPPED_MECHANICS = {
@@ -252,6 +280,7 @@ class Context:
     blades: set[str] = field(default_factory=set)  # bones whose hits use a hilt->tip capsule
     particles: dict[str, str] = field(default_factory=dict)  # job overrides for MM particle names
     bullets: dict[str, str] = field(default_factory=dict)  # job: projectile bullet model/material → entity id
+    items: dict[str, str] = field(default_factory=dict)  # job: MythicMobs item name → Bedrock item id (dropitem)
     base_damage: float = 1.0  # the mob's Damage (basedamage multiplies it)
     notes: list[str] = field(default_factory=list)
     used_mechanics: set[str] = field(default_factory=set)
@@ -437,6 +466,24 @@ def _fmt_opts(o: dict[str, Any]) -> str:
     return "{" + ";".join(parts) + "}" if parts else ""
 
 
+def _bedrock_sound(snd: str, mm: str, ctx: "Context", where: str) -> str:
+    """Java vanilla sound names → Bedrock events; reports pack sounds without a file and unknown Java names."""
+    if snd in ctx.sounds.values():
+        return snd
+    plain = snd.removeprefix("minecraft:")
+    if plain in JAVA_SOUNDS:
+        ctx.note(where, f"Java sound '{mm}' → Bedrock '{JAVA_SOUNDS[plain]}' [VERIFY]")
+        return JAVA_SOUNDS[plain]
+    if ":" in snd and not snd.startswith("minecraft:"):
+        last = re.split(r"[.:]", snd)[-1]
+        ctx.note(where, f"sound '{mm}' was not found in sounds/ (expected {last}.ogg, or map it in behemoth.json "
+                        f"\"sounds\") — it will be silent")
+    elif plain.split(".", 1)[0] in ("entity", "item", "ui", "event", "music", "enchant", "particle"):
+        ctx.note(where, f"sound '{mm}' is a Java sound name with no Bedrock mapping; put the Bedrock event in "
+                        f"behemoth.json \"sounds\" — it will be silent")
+    return snd
+
+
 def blade_tip(bone: str) -> str:
     return f"{bone}_tip"
 
@@ -456,7 +503,7 @@ def translate_targeter(t: tuple[str, dict[str, Any]] | None, ctx: Context, where
             ctx.note(where, f"@{t[0]} type filter '{_opt(o, 'types', 'type', 't')}' dropped (MythicMobs mob names)")
         return f"@{RADIUS_TARGETERS[name]}{_fmt_opts({'r': float(_opt(o, 'r', 'radius', default=5))})}"
     if name == "modelpart":
-        pid = str(_opt(o, "pid", "partid", default=""))
+        pid = str(_opt(o, "pid", "partid", "p", "part", default=""))
         bone = resolve_bone(ctx, pid, where)
         if _opt(o, "em", "exactmatch") is False:
             ctx.note(where, f"@modelpart pid '{pid}' with em=false (all parts starting with it) uses only the "
@@ -486,8 +533,13 @@ def translate_targeter(t: tuple[str, dict[str, Any]] | None, ctx: Context, where
     if name in ("randomthreattarget", "rtt"):
         ctx.note(where, "@RandomThreatTarget approximated as @RandomPlayer")
         return "@RandomPlayer"
-    if name == "cone":
-        return f"@Cone{_fmt_opts({'angle': float(_opt(o, 'angle', 'a', default=60)), 'r': float(_opt(o, 'range', 'r', default=6))})}"
+    if name in ("cone", "livingincone", "entitiesincone", "lic", "eic"):
+        co = {"angle": float(_opt(o, "angle", "a", default=60)), "r": float(_opt(o, "range", "r", default=6))}
+        rot = float(_opt(o, "rotation", "rot", default=0))
+        if rot:
+            co["rotation"] = rot
+            ctx.note(where, f"@{t[0]} rotation {rot:g}°: positive turns the cone to the boss's left, like fieldOfView [VERIFY]")
+        return f"@Cone{_fmt_opts(co)}"
     if name == "ring":
         return f"@Ring{_fmt_opts({'radius': float(_opt(o, 'radius', 'r', default=5)), 'points': int(_opt(o, 'points', 'p', default=8))})}"
     if name == "forward":
@@ -613,6 +665,11 @@ def _cond_core(c: ConditionLine, ctx: Context, where: str, target_condition: boo
         return [f"{bang}directionalVelocity{{{';'.join(f'{k}={v}' for k, v in parts.items())}}}"]
     if n == "onground":
         return [f"{bang}onGround"]
+    if n == "onblock":
+        blocks = str(_opt(o, "b", "blocks", "m", "material", "t", "type", default="")).lower().replace(",", "|")
+        if not blocks:
+            raise ValueError("no block given")
+        return [f"{bang}onBlock{{blocks={blocks}}}"]
     if n == "damagecause":
         causes = [MM_DAMAGE_CAUSES.get(x.strip().upper()) for x in str(_opt(o, "cause", "c", default="")).split(",")]
         if not all(causes):
@@ -799,6 +856,7 @@ def translate_line(sl: SkillLine, ctx: Context, where: str) -> dict[str, Any] | 
             snd = ctx.sounds[mm.split(":", 1)[1]]
         if mm in ctx.sounds:
             ctx.used_mechanics.add("__sound_mapped")
+        snd = _bedrock_sound(snd, mm, ctx, where)
         line = {"m": "sound", "o": {"sound": snd, "volume": _num(_opt(o, "v", "volume", default=1)),
                                      "pitch": _num(_opt(o, "p", "pitch", default=1))}}
     elif n == "aura":
@@ -919,6 +977,25 @@ def translate_line(sl: SkillLine, ctx: Context, where: str) -> dict[str, Any] | 
         line = {"m": "teleport", "o": {}}
         if _opt(o, "spreadh", "sh", "spreadv", "sv") is not None:
             ctx.note(where, "teleport spread dropped (lands exactly on the target point)")
+    elif n == "potionclear":
+        line = {"m": "potionClear", "o": {}}
+    elif n == "dropitem":
+        raw_items = str(_opt(o, "items", "item", "i", default=""))
+        drops = []
+        for entry in [x.strip() for x in raw_items.split(",") if x.strip()]:
+            name_, _, amount = entry.partition(":") if not entry.lower().startswith("minecraft:") else (entry, "", "")
+            amount = amount or str(_opt(o, "amount", "a", default=1))
+            item = ctx.items.get(name_) or ctx.items.get(name_.lower())
+            if not item and (name_.lower().startswith("minecraft:") or name_.islower() or name_.isupper()):
+                item = name_.lower() if ":" in name_ else f"minecraft:{name_.lower()}"
+            if not item:
+                ctx.note(where, f"dropitem: MythicMobs item '{name_}' has no Bedrock item; put it in behemoth.json "
+                                f"\"items\": {{\"{name_}\": \"minecraft:...\"}} — line skipped")
+                continue
+            drops.append({"item": item, "amount": int(_num(amount.split("to")[-1]) or 1)})
+        if not drops:
+            return None
+        line = {"m": "dropItem", "o": {"items": drops}}
     elif n == "partvis":
         part = str(_opt(o, "p", "part", "pid", default=""))
         bone = resolve_bone(ctx, part, where)

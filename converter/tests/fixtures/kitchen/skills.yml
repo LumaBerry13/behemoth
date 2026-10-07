@@ -134,3 +134,14 @@ ks_grab_bite:
   - partvis{m=kitchen;p=arm;child=true;v=true} @self
   - setAI{ai=true} @self
   - lockmodelhead{mid=kitchen;lockyaw=false;lockpitch=false} @self
+
+# --- Steel Raider vocabulary: effect:sound, @ModelPart{p=}, partvisibility, potionclear, dropitem, @LivingInCone, onblock ---
+ks_steel:
+  Conditions:
+  - onblock{m=AIR} false
+  Skills:
+  - effect:sound{s=entity.ender_dragon.flap;v=2}
+  - potionclear{}
+  - partvisibility{m=kitchen;p=arm;v=false}
+  - dropitem{i=DIAMOND} @ModelPart{m=kitchen;p=arm}
+  - damage{a=3} @LivingInCone{a=110.0;r=4.5;rot=-20.0}

@@ -93,6 +93,12 @@ def test_archivist_style_mappings(out):
     bar = out / "RP" / "textures" / "behemoth" / "bossbars" / "Kitchen Sink.png"
     assert bar.exists() and bar.read_bytes()[1:4] == b"PNG"    # no bossbar.png -> empty image
     assert not (out / "RP" / "textures" / "behemoth" / "bossbars" / "Spark.png").exists()  # minions have no bar
+    # Steel Raider vocabulary
+    assert '"!onBlock{blocks=air}"' in js and 'm: "potionClear"' in js
+    assert 'sound: "mob.enderdragon.flap"' in js                             # Java sound name -> Bedrock
+    assert 'm: "dropItem", o: { items: [{ item: "minecraft:diamond", amount: 1 }] }, t: "@Bone{bone=arm}"' in js
+    assert '"@Cone{angle=110.0;r=4.5;rotation=-20.0}"' in js
+    assert "magic: -1" in js                                                 # POISON has no Bedrock cause
     index = (out / "BP" / "scripts" / "bosses" / "index.js").read_text(encoding="utf-8")
     assert "export default [kitchen, kitchen_spark]" in index
     lang = (out / "RP" / "texts" / "en_US.lang").read_text(encoding="utf-8")

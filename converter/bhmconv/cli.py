@@ -27,6 +27,7 @@ files and the per-boss mappings:
   "bone_aliases": { "<modelengine part>": "<bedrock bone>" },
   "blades": ["<bone>"],  # weapon bones: hits use a hilt->tip capsule, summons land at the tip
   "particles": { "<java particle>": "<bedrock particle id>" },
+  "items": { "<MythicMobs item>": "<bedrock item id>" },
   "bullets": { "<bulletModel | bulletMaterial>": "<entity id>" },  # projectile models flown by the framework
   "pack_icon": "icon.png",      # copied into both packs
   "link_all_animations": true,  # also register animations the client entity does not list (Blockbench exports)
@@ -162,7 +163,7 @@ def _ident(name: str) -> str:
 def _pack_identity(job: dict, save, display: str, notes: list[str]) -> dict:
     """Pack name/id/version + stable UUIDs (generated once, saved back by `save(job)`)."""
     pack = job.setdefault("pack", {})
-    pack.setdefault("name", display)
+    pack.setdefault("name", re.sub(r"§[0-9a-fk-or]", "", display))
     pack.setdefault("id", re.sub(r"[^a-z0-9_]", "_", job["boss"].lower()))
     pack.setdefault("version", [1, 0, 0])
     uuids = pack.setdefault("uuids", {})
@@ -314,7 +315,7 @@ def convert(job_path: Path | None = None, out: Path | None = None, *, job: dict 
 
 
 NEEDS = ("unsupported", "has no mapping", "not in the bedrock geometry", "skipped (not converted", "could not be read",
-         "not supported", "no matching animation", "was not found", "put ", "does not match", "is cut off")
+         "not supported", "no matching animation", "was not found", "put ", "will be silent", "does not match", "is cut off")
 APPROX = ("[verify]", "approximat", "dropped", "capped", "→ grab", "mirrored", "÷", "folded", "cannot", "only the bar title",
           "drawn as", "skipped `")
 
@@ -360,8 +361,11 @@ def build_sounds(job: dict, src: Path, out: Path, notes: list[str]) -> dict[str,
     used = set(re.findall(r"sound\{[^}]*?\b(?:s|sound)=([A-Za-z0-9_.:\-]+)", job.get("yaml_text", ""))) if sf.get("auto") else set()
     dest = f"sounds/{sf.get('dest', job['boss'])}"
     groups: dict[str, list[Path]] = {}
+    # growl_1/growl_2 are random variants of one sound, unless the YAML plays growl_1 by its own name.
+    used_last = {re.split(r"[.:]", u)[-1].lower() for u in used}
     for f in sorted(folder.glob("*.ogg")):
-        groups.setdefault(re.sub(r"_\d+$", "", f.stem), []).append(f)
+        stem = f.stem if f.stem.lower() in used_last else re.sub(r"_\d+$", "", f.stem)
+        groups.setdefault(stem, []).append(f)
     defs, mapping = {}, {}
     for stem, files in groups.items():
         event = f"{prefix}.{stem}"
@@ -470,6 +474,7 @@ def build_entity(spec: dict, job: dict, src: Path, out: Path, mobs: dict, skills
         bone_aliases=spec.get("bone_aliases", {}),
         blades=set(spec.get("blades", [])),
         particles=job.get("particles", {}),
+        items=job.get("items", {}),
         bullets=job.get("bullets", {}),
         mm_mobs=set(mobs),
     )

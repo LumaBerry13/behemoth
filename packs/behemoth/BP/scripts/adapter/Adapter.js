@@ -762,6 +762,11 @@ export const Adapter = {
   addEffect(e, effect, ticks, amplifier = 0) {
     if (e.isValid) e.addEffect(effect, ticks, { amplifier, showParticles: true });
   },
+  /** Remove every status effect. @param {Entity} e */
+  clearEffects(e) {
+    if (!e.isValid) return;
+    for (const fx of e.getEffects()) e.removeEffect(fx.typeId);
+  },
   /** @param {Entity} e */
   remove(e) {
     if (e.isValid) e.remove();

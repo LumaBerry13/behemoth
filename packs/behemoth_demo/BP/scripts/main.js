@@ -3,4 +3,4 @@
 import { connect } from "./behemoth/connector.js";
 import bosses from "./bosses/index.js";
 
-connect({ pack: "behemoth_demo", version: "0.3.0", minFramework: "0.3.0", bosses });
+connect({ pack: "behemoth_demo", version: "0.4.0", minFramework: "0.4.0", bosses });

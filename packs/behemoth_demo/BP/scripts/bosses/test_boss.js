@@ -281,6 +281,15 @@ export default {
         { m: "throw", o: { velocity: 8, velocityY: 3 }, t: "@target", delay: 30 },
       ],
     },
+    // On solid ground only: clear its own effects, drop a diamond, hit a cone turned 90° to its left.
+    demo_ground_slam: {
+      if: ["!onBlock{blocks=air}"],
+      c: [
+        { m: "potionClear", t: "@self" },
+        { m: "dropItem", o: { items: [{ item: "minecraft:diamond", amount: 2 }] }, t: "@SelfLocation" },
+        { m: "damage", o: { amount: 3 }, t: "@Cone{angle=60;r=6;rotation=90}" },
+      ],
+    },
     // Only melee hits make it bleed (damageCause).
     bleed: {
       tr: "onDamaged",

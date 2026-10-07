@@ -143,6 +143,8 @@ import suicide from "../modules/mechanics/suicide.js";
 import telegraph from "../modules/mechanics/telegraph.js";
 import partVisibility from "../modules/mechanics/part_visibility.js";
 import grab from "../modules/mechanics/grab.js";
+import potionClear from "../modules/mechanics/potion_clear.js";
+import dropItem from "../modules/mechanics/drop_item.js";
 
 import self from "../modules/targeters/self.js";
 import target from "../modules/targeters/target.js";
@@ -195,6 +197,7 @@ import sprinting from "../modules/conditions/sprinting.js";
 import entityType from "../modules/conditions/entity_type.js";
 import hasEffect from "../modules/conditions/has_effect.js";
 import damageCause from "../modules/conditions/damage_cause.js";
+import onBlock from "../modules/conditions/on_block.js";
 
 import onSpawn from "../modules/triggers/on_spawn.js";
 import onTimer from "../modules/triggers/on_timer.js";
@@ -283,6 +286,8 @@ export function bindModules(sm) {
   sm.bind("telegraph", telegraph);
   sm.bind("partVisibility", partVisibility);
   sm.bind("grab", grab);
+  sm.bind("potionClear", potionClear);
+  sm.bind("dropItem", dropItem);
 
   sm.bindTargeter("self", self);
   sm.bindTargeter("target", target);
@@ -336,6 +341,7 @@ export function bindModules(sm) {
   sm.bindCondition("entityType", entityType);
   sm.bindCondition("hasEffect", hasEffect);
   sm.bindCondition("damageCause", damageCause);
+  sm.bindCondition("onBlock", onBlock);
 
   sm.bindTrigger("onSpawn", onSpawn);
   sm.bindTrigger("onTimer", onTimer);

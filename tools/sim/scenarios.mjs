@@ -884,6 +884,24 @@ console.log("\n33. partVisibility, grab, damageCause, onAttack from a cancelled 
     d.boss.applyDisplay();
     const hud = fs.readFileSync(new URL("../../packs/behemoth/RP/ui/hud_screen.json", import.meta.url), "utf8");
     check("HUD hides the text of bhmbar_ bar keys", hud.includes("((#bossName - 'bhmbar_') = #bossName)"));
+
+    // Steel Raider pieces: potionClear, dropItem, onBlock, cone rotation.
+    d.e.addEffect("slowness", 200, { amplifier: 1 });
+    d.boss.facingLocked = true;                          // keep facing +Z; its left is +X
+    d.e.rotation.y = 0;
+    d.player.location = { x: d.e.location.x + 3, y: d.e.location.y, z: d.e.location.z };
+    const s5 = mc.log.length;
+    d.run("demo_ground_slam", 3, { force: false });
+    const log5 = mc.log.slice(s5);
+    check("potionClear removes the caster's effects", d.e.effects.size === 0);
+    check("dropItem drops the items", log5.some(([, k, x]) => k === "drop" && x === "minecraft:diamond x2"));
+    check("a cone rotated 90° hits a player on the boss's left", log5.some(([, k, x]) => k === "hurt" && x.startsWith("minecraft:player")));
+    d.e.location = { ...d.e.location, y: 70 };           // in the air: onBlock{air} → the skill does not run
+    const s6 = mc.log.length;
+    d.run("demo_ground_slam", 3, { force: false });
+    check("…and does nothing in the air (!onBlock{blocks=air})", !mc.log.slice(s6).some(([, k]) => k === "drop"));
+    d.e.location = { ...d.e.location, y: 64 };
+    d.boss.facingLocked = false;
   }
 }
 

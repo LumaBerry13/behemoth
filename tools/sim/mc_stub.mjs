@@ -108,6 +108,8 @@ export class Entity {
   setOnFire(sec) { note("fire", `${this.typeId} ${sec}s`); this.burning = true; return true; }
   addEffect(eff, ticks, o) { note("effect", `${this.typeId} ${eff} ${ticks}t amp${o?.amplifier ?? 0}`); this.effects.set(eff, { duration: ticks }); }
   getEffect(eff) { return this.effects.get(eff); }
+  getEffects() { return [...this.effects.keys()].map((typeId) => ({ typeId, ...this.effects.get(typeId) })); }
+  removeEffect(eff) { note("effect_removed", `${this.typeId} ${eff}`); return this.effects.delete(eff); }
   runCommand(cmd) { note("command", `${this.typeId}: ${cmd}`); return { successCount: 1 }; }
   teleport(loc) { note("teleport", `${this.typeId} → ${fmt(loc)}`); this.location = { ...loc }; }
   applyDamage(amount, opts) {

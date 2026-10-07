@@ -99,6 +99,12 @@ Put the `.ogg` files in `sounds/`. Name each file after the **last part** of the
 
 Sounds the YAML does not use still get packaged as `<pack id>.<name>`.
 
+- If the report says a sound "was not found in sounds/", the file name does not match the end of the
+  sound id (for example `sr.air_jump` needs `air_jump.ogg`). Rename the file and convert again.
+- Java vanilla sounds (`entity.ender_dragon.flap`) are translated to their Bedrock names for the common
+  ones. If the report lists one as a Java sound name, add its Bedrock event to `behemoth.json` under
+  `"sounds": { "entity.some.sound": "mob.some.sound" }`.
+
 ## 6. Custom boss bar
 
 Put `bossbar.png` in the boss's folder: your bar art **including the boss name**. It is drawn around
@@ -169,6 +175,8 @@ Created on the first run with the pack identity; everything else is optional.
     "extra_lines": { "SOME_METASKILL": [ { "m": "cameraShake", "o": { "intensity": 0.3 } } ] }
   },
   "particles": { "some_java_particle": "minecraft:some_bedrock_particle" },
+  "items": { "Steel_Raider_Shield": "minecraft:shield" },
+  "sounds": { "entity.some.java_sound": "mob.some.bedrock_sound" },
   "mob_types": { "MOB_WITHOUT_FOLDER": { "type": "minecraft:pig", "lifetime": 100 } },
   "bullets": { "11400": "pack:bullet_entity" }
 }
@@ -178,6 +186,8 @@ Created on the first run with the pack identity; everything else is optional.
   `pack.version` when you publish an update.
 - `blades`: weapon bones whose hits follow the blade from hilt to tip.
 - `bone_aliases`: a ModelEngine part name the YAML uses → the Bedrock bone that stands for it.
+- `items`: MythicMobs custom items (`dropitem{i=...}`) → a Bedrock item id. Vanilla names (`DIAMOND`) work
+  without it.
 - `tuning` changes how the boss plays on Bedrock without touching the YAML. Every change is listed in
   the report.
 

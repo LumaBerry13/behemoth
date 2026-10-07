@@ -9,6 +9,7 @@ kitchen_boss:
     power: float/0
   DamageModifiers:
   - FALL 0
+  - POISON -1
   Options:
     FollowRange: 24
   Modules:
@@ -25,6 +26,7 @@ kitchen_boss:
   - skill{s=ks_mind} @target ~onTimer:20
   - SudoSkill{s=ks_bleed} @trigger ~onDamaged
   - skill{s=ks_grab_bite} @target ~onTimer:30
+  - skill{s=ks_steel} @self ~onTimer:40
 
 # A made-up effect mob summoned by the boss (converted in the same job as a minion).
 kitchen_spark:
