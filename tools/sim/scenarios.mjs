@@ -674,10 +674,18 @@ console.log("\n29. D7: loot goes into a chest that explosions cannot destroy");
   if (!d) check("skipped (demo pack not loaded)", true);
   else {
     d.e.location = { x: 10.5, y: 64, z: 10.5 };
+    // dropItem during the fight (e.g. a shield knocked off): kept, persisted, never on the ground.
+    services.bosses.addLoot(d.boss, [{ item: "minecraft:shield", amount: 1 }], d.e.location);
+    check("loot dropped mid-fight is kept with the boss (persisted)", JSON.parse(d.e.dyn["bhm:state"]).loot?.[0]?.item === "minecraft:shield");
     d.e.applyDamage(1000, { cause: "entityAttack", damagingEntity: d.player });
     mc.tick(2);
+    // dropItem during the death sequence: added to the same chest.
+    services.bosses.addLoot(d.boss, [{ item: "minecraft:mace", amount: 1 }], d.e.location);
     const key = "10,64,10";
     const chest = dim.containers.get(key);
+    check("mid-fight and death-skill loot end up in the death chest",
+      !!chest?.slots.some((x) => x.typeId === "minecraft:shield") && !!chest?.slots.some((x) => x.typeId === "minecraft:mace") &&
+      !mc.log.some(([, k, x]) => k === "drop" && (x.includes("shield") || x.includes("mace"))));
     const diamonds = chest?.slots.filter((s) => s.typeId === "minecraft:diamond").reduce((n, s) => n + s.amount, 0) ?? 0;
     check("chest placed where the boss died", dim.blocks.get(key) === "minecraft:chest");
     check("drops are inside it (2–5 diamonds), none on the ground", diamonds >= 2 && diamonds <= 5 && !mc.log.some(([, k, x]) => k === "drop" && x.includes("diamond")));
@@ -894,7 +902,9 @@ console.log("\n33. partVisibility, grab, damageCause, onAttack from a cancelled 
     d.run("demo_ground_slam", 3, { force: false });
     const log5 = mc.log.slice(s5);
     check("potionClear removes the caster's effects", d.e.effects.size === 0);
-    check("dropItem drops the items", log5.some(([, k, x]) => k === "drop" && x === "minecraft:diamond x2"));
+    check("dropItem keeps the items for the loot chest (none on the ground)",
+      d.boss.pendingLoot.some((it) => it.item === "minecraft:diamond" && it.amount === 2) && !log5.some(([, k]) => k === "drop"));
+    d.boss.pendingLoot = [];
     check("a cone rotated 90° hits a player on the boss's left", log5.some(([, k, x]) => k === "hurt" && x.startsWith("minecraft:player")));
     d.e.location = { ...d.e.location, y: 70 };           // in the air: onBlock{air} → the skill does not run
     const s6 = mc.log.length;

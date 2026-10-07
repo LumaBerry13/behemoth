@@ -143,11 +143,9 @@ def test_misplaced_settings_are_explained(tmp_path, capsys):
 
 
 def test_java_sounds_json_names_the_events(tmp_path):
-    # A Java resource pack in the folder: its sounds.json says which file is which sound.
+    # A Java sounds.json in the mob folder says which file is which sound.
     f = make_folder(tmp_path)
-    assets = f / "resource pack" / "assets" / "kitchen"
-    assets.mkdir(parents=True)
-    (assets / "sounds.json").write_text(json.dumps({"ks.bellow": {"sounds": ["custom/kitchen/growl"]}}))
+    (f / "kitchen_boss" / "sounds.json").write_text(json.dumps({"ks.bellow": {"sounds": ["custom/kitchen/growl"]}}))
     assert main([str(f)]) == 0
     defs = json.loads((f / "pack" / "RP" / "sounds" / "sound_definitions.json").read_text(encoding="utf-8"))["sound_definitions"]
     assert defs["ks.bellow"]["sounds"][0]["name"].endswith("/growl") and "kitchen_sink.growl" not in defs

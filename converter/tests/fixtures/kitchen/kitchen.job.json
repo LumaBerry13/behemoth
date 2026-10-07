@@ -49,5 +49,8 @@
       ],
       "identifier": "kitchen:spark"
     }
-  ]
+  ],
+  "items": {
+    "Kitchen_Gem": "minecraft:emerald"
+  }
 }

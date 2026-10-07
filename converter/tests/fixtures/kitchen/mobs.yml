@@ -3,6 +3,10 @@ kitchen_boss:
   Type: ZOMBIE
   Display: 'Kitchen Sink'
   Health: 150
+  Drops:
+  - DIAMOND 1-3 0.5
+  - Kitchen_Gem 2
+  - exp 50
   Damage: 4
   Variables:
     mood: string/calm

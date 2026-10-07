@@ -51,6 +51,17 @@ export class LootChests {
     return placed;
   }
 
+  /**
+   * Add items to chests placed earlier (loot dropped during the death sequence); what does not fit
+   * goes into new chest(s) next to them.
+   * @param {import("@minecraft/server").Dimension} dim @param {import("@minecraft/server").Vector3} loc
+   * @param {import("@minecraft/server").Vector3[]} chests @param {{ item: string, amount: number }[]} items
+   */
+  add(dim, loc, chests, items) {
+    const rest = Adapter.addToChests(dim, chests, items);
+    return [...chests, ...this.place(dim, loc, rest)];
+  }
+
   /** Forget chests that are gone (broken by a player). @param {number} tick */
   sweep(tick) {
     if (tick % SWEEP_TICKS !== 0 || !this.protected.length) return;

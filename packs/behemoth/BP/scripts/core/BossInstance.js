@@ -55,6 +55,10 @@ export class BossInstance {
     this.scaledFor = 1;
     /** Bit mask of hidden model parts (bit i = config.parts[i]); entity property bhm:hidden_parts. */
     this.hiddenParts = 0;
+    /** @type {{ item: string, amount: number }[]} items from `dropItem` while alive: they go into the loot chest (D7). */
+    this.pendingLoot = [];
+    /** @type {{ dim: import("@minecraft/server").Dimension, loc: import("@minecraft/server").Vector3, chests: import("@minecraft/server").Vector3[] } | undefined} where the loot went when it died */
+    this.lootSpot = undefined;
     /** Last framework tick an `attack` event was emitted (one per tick). */
     this.lastAttackTick = -1;
     /** Framework tick when a `stun` ends (0 = not stunned). */
@@ -369,6 +373,7 @@ export class BossInstance {
     this.stunPrev = undefined;
     this.hiddenParts = 0;
     this.applyParts();
+    this.pendingLoot = []; // the fight starts over: dropped equipment is back on the model
     this.updateHealthScale(true);
     this.gcdUntil = 0;
     this.invulnerable = !!this.config.invulnerable;

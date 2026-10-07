@@ -385,7 +385,9 @@ def build_sounds(job: dict, src: Path, out: Path, notes: list[str]) -> dict[str,
                 shutil.copyfile(f, _mk(out / "RP" / dest / f.name))
             defs[event] = {"category": "hostile", "max_distance": 48.0,
                            "sounds": [{"name": f"{dest}/{f.stem}", "load_on_low_memory": True} for f in files]}
-            mapping[event] = mapping[f"{ns_}:{event}"] = event
+            mapping[event] = event
+            if ns_:
+                mapping[f"{ns_}:{event}"] = event
             for f in files:
                 for stem in list(groups):
                     groups[stem] = [g for g in groups[stem] if g != f]
@@ -414,12 +416,14 @@ def build_sounds(job: dict, src: Path, out: Path, notes: list[str]) -> dict[str,
 
 
 def _java_sound_events(src: Path) -> list[tuple[str, str, list[str]]]:
-    """(namespace, event, [file stems]) from Java resource pack sounds.json files under the folder
-    (assets/<namespace>/sounds.json). Generated output folders are skipped."""
+    """(namespace, event, [file stems]) from Java-format sounds.json files in the folder: next to the
+    YAML, in a mob folder (MY_BOSS/sounds.json) or in sounds/. The namespace is known only for a
+    resource pack layout (assets/<namespace>/sounds.json); MythicMobs ids match without it too.
+    Generated output folders are skipped."""
     found = []
     for f in sorted(src.rglob("sounds.json")):
         rel = f.relative_to(src).parts
-        if rel[0] in ("pack", "dist") or len(rel) < 3 or rel[-3] != "assets":
+        if rel[0] in ("pack", "dist"):
             continue
         try:
             data = json.loads(f.read_text(encoding="utf-8"))
@@ -427,10 +431,12 @@ def _java_sound_events(src: Path) -> list[tuple[str, str, list[str]]]:
             continue
         if not isinstance(data, dict):
             continue
+        ns = rel[-2] if len(rel) >= 3 and rel[-3] == "assets" else ""
         for event, spec in data.items():
-            sounds = spec.get("sounds", []) if isinstance(spec, dict) else []
-            stems = [Path(s if isinstance(s, str) else str(s.get("name", ""))).name.lower() for s in sounds]
-            found.append((rel[-2], str(event), [s for s in stems if s]))
+            if not isinstance(spec, dict) or not isinstance(spec.get("sounds"), list):
+                continue
+            stems = [Path(x if isinstance(x, str) else str(x.get("name", ""))).name.lower() for x in spec["sounds"]]
+            found.append((ns, str(event), [x for x in stems if x]))
     return found
 
 
@@ -626,6 +632,7 @@ def build_entity(spec: dict, job: dict, src: Path, out: Path, mobs: dict, skills
         "threat": {"enabled": tb["threat"]},
         **({"death": death_cfg} if death_cfg else {}),
         **({"damageModifiers": tb["damageModifiers"]} if tb["damageModifiers"] else {}),
+        **({"drops": tb["drops"]} if tb.get("drops") else {}),
         "skills": tb["skills"],
         "requires": requires,
     }

@@ -478,6 +478,36 @@ export const Adapter = {
    * @param {Dimension} dim @param {Vector3} loc @param {{ item: string, amount: number }[]} items @param {number} [maxChests]
    * @returns {{ placed: Vector3[], leftover: { item: string, amount: number }[] }}
    */
+  /**
+   * Add items to existing chests; returns what did not fit (or could not be created).
+   * @param {Dimension} dim @param {Vector3[]} chests @param {{ item: string, amount: number }[]} items
+   * @returns {{ item: string, amount: number }[]}
+   */
+  addToChests(dim, chests, items) {
+    /** @type {{ item: string, amount: number }[]} */
+    const rest = [];
+    for (const it of items) {
+      let left = it.amount;
+      try {
+        const max = new ItemStack(it.item, 1).maxAmount;
+        for (const spot of chests) {
+          const container = dim.getBlock(spot)?.getComponent("minecraft:inventory")?.container;
+          while (container && left > 0) {
+            const n = Math.min(left, max);
+            const back = container.addItem(new ItemStack(it.item, n));
+            left -= n - (back?.amount ?? 0);
+            if (back) break;
+          }
+          if (left <= 0) break;
+        }
+      } catch {
+        /* unknown item id or unloaded chunk: handed back below */
+      }
+      if (left > 0) rest.push({ item: it.item, amount: left });
+    }
+    return rest;
+  },
+
   placeLootChests(dim, loc, items, maxChests = 3) {
     /** @type {ItemStack[]} */
     const stacks = [];

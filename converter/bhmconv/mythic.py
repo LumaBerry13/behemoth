@@ -484,6 +484,49 @@ def _bedrock_sound(snd: str, mm: str, ctx: "Context", where: str) -> str:
     return snd
 
 
+def bedrock_item(name: str, ctx: "Context", where: str, what: str) -> str | None:
+    """A MythicMobs item name → Bedrock item id: behemoth.json "items" first, then vanilla names
+    (DIAMOND, diamond, minecraft:diamond). Custom MythicMobs items without a mapping are reported."""
+    item = ctx.items.get(name) or ctx.items.get(name.lower())
+    if not item and (name.lower().startswith("minecraft:") or name.islower() or name.isupper()):
+        item = name.lower() if ":" in name else f"minecraft:{name.lower()}"
+    if not item:
+        ctx.note(where, f"{what}: MythicMobs item '{name}' has no Bedrock item; put it in behemoth.json "
+                        f"\"items\": {{\"{name}\": \"minecraft:...\"}} — skipped")
+    return item
+
+
+def translate_drops(mob: dict, ctx: "Context", where: str) -> list[dict[str, Any]]:
+    """MythicMobs `Drops` lines ("<item> [amount|min-max] [chance]") → config drops (they go into
+    the boss's loot chest). Experience, money and drop tables have no Bedrock loot equivalent."""
+    out = []
+    for raw in mob.get("Drops") or []:
+        parts = str(raw).split()
+        if not parts:
+            continue
+        name = parts[0]
+        if name.lower() in ("exp", "experience", "xp", "money", "mcmmo-exp", "champions-exp", "heroes-exp", "skillapi-exp"):
+            ctx.note(where, f"drop '{raw}' skipped (experience/money has no Bedrock loot item)")
+            continue
+        item = bedrock_item(name, ctx, where, "drop")
+        if not item:
+            continue
+        drop: dict[str, Any] = {"item": item}
+        if len(parts) > 1:
+            lo, _, hi = parts[1].partition("-") if "to" not in parts[1] else parts[1].partition("to")
+            try:
+                drop["amount"] = [int(float(lo)), int(float(hi))] if hi else int(float(lo))
+            except ValueError:
+                ctx.note(where, f"drop '{raw}': amount '{parts[1]}' not understood; 1 used")
+        if len(parts) > 2:
+            try:
+                drop["chance"] = float(parts[2])
+            except ValueError:
+                ctx.note(where, f"drop '{raw}': chance '{parts[2]}' not understood; always drops")
+        out.append(drop)
+    return out
+
+
 def blade_tip(bone: str) -> str:
     return f"{bone}_tip"
 
@@ -985,14 +1028,9 @@ def translate_line(sl: SkillLine, ctx: Context, where: str) -> dict[str, Any] | 
         for entry in [x.strip() for x in raw_items.split(",") if x.strip()]:
             name_, _, amount = entry.partition(":") if not entry.lower().startswith("minecraft:") else (entry, "", "")
             amount = amount or str(_opt(o, "amount", "a", default=1))
-            item = ctx.items.get(name_) or ctx.items.get(name_.lower())
-            if not item and (name_.lower().startswith("minecraft:") or name_.islower() or name_.isupper()):
-                item = name_.lower() if ":" in name_ else f"minecraft:{name_.lower()}"
-            if not item:
-                ctx.note(where, f"dropitem: MythicMobs item '{name_}' has no Bedrock item; put it in behemoth.json "
-                                f"\"items\": {{\"{name_}\": \"minecraft:...\"}} — line skipped")
-                continue
-            drops.append({"item": item, "amount": int(_num(amount.split("to")[-1]) or 1)})
+            item = bedrock_item(name_, ctx, where, "dropitem")
+            if item:
+                drops.append({"item": item, "amount": int(_num(amount.split("to")[-1]) or 1)})
         if not drops:
             return None
         line = {"m": "dropItem", "o": {"items": drops}}
@@ -1368,4 +1406,5 @@ def translate_boss(mob_id: str, mob: dict, skills: dict[str, dict], ctx: Context
         "variables": _mob_variables(mob, ctx, mob_id),
         "noAI": bool(opts.get("NoAI", False)),
         "invincible": bool(opts.get("Invincible", False)),
+        "drops": translate_drops(mob, ctx, f"{mob_id}.Drops"),
     }

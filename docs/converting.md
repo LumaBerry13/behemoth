@@ -41,7 +41,8 @@ private/Wendigo/
 │   ├── wendigo.geo.json        geometry
 │   ├── wendigo.animation.json  animations (several files are fine)
 │   ├── wendigo.png             texture (file name = the last part of the client entity's texture path)
-│   └── bossbar.png             optional custom boss bar art, with the name (section 6)
+│   ├── bossbar.png             optional custom boss bar art, with the name (section 6)
+│   └── sounds.json             optional: the Java pack's sounds.json (section 5)
 ├── sounds/                     optional .ogg files (section 5)
 ├── pack_icon.png               optional
 └── behemoth.json               optional settings (section 7); the converter adds the pack UUIDs here
@@ -99,9 +100,9 @@ Put the `.ogg` files in `sounds/`. Name each file after the **last part** of the
 
 Sounds the YAML does not use still get packaged as `<pack id>.<name>`.
 
-If the original Java resource pack is in the folder (any sub-folder, e.g. `resource pack/assets/...`),
-its `sounds.json` is read: it says which file belongs to which sound id, so the files can keep their
-original names.
+If you have the original Java pack's `sounds.json` (from `assets/<namespace>/sounds.json`), put it in
+the mob's folder (`MY_BOSS/sounds.json`). It says which file belongs to which sound id, so the `.ogg`
+files can keep their original names (`sr.air_jump` → `air_attack_jump.ogg`).
 
 - If the report says a sound "was not found in sounds/", the file name does not match the end of the
   sound id (for example `sr.air_jump` needs `air_jump.ogg`). Rename the file and convert again.
@@ -193,7 +194,7 @@ the conversion with a message instead of being ignored. An example with values:
   `pack.version` when you publish an update.
 - `blades`: weapon bones whose hits follow the blade from hilt to tip.
 - `bone_aliases`: a ModelEngine part name the YAML uses → the Bedrock bone that stands for it.
-- `items`: MythicMobs custom items (`dropitem{i=...}`) → a Bedrock item id. Vanilla names (`DIAMOND`) work
+- `items`: MythicMobs custom items (`dropitem{i=...}` and the mob's `Drops`) → a Bedrock item id. Vanilla names (`DIAMOND`) work
   without it.
 - `tuning` changes how the boss plays on Bedrock without touching the YAML. Every change is listed in
   the report.

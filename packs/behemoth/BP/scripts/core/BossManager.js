@@ -385,8 +385,9 @@ export class BossManager {
       // Backstop: if the entity JSON's own despawn never happens, remove the body.
       if (boss.config.death?.event) this.trackTemporary(boss.entity, boss.config.death.removeAfter ?? 400);
     }
-    this.services.bus.emit("death", { boss, triggerEntity: killer, data: { cause } });
+    // The loot chest first: onDeath skills that drop items (dropItem) add to it.
     this.spawnDrops(boss);
+    this.services.bus.emit("death", { boss, triggerEntity: killer, data: { cause } });
     this.services.scheduler.after(DEATH_LINGER_TICKS, () => boss.destroy());
     Log.debug(`${boss.config.id} died (${cause})`);
   }
@@ -400,19 +401,42 @@ export class BossManager {
     const dim = boss.dimension;
     const loc = boss.location;
     /** @type {{ item: string, amount: number }[]} */
-    const items = [];
+    const items = [...boss.pendingLoot];
+    boss.pendingLoot = [];
     for (const d of boss.config.drops ?? []) {
       if (!Random.chance(d.chance ?? 1)) continue;
       const amount = Array.isArray(d.amount) ? Random.int(d.amount[0], d.amount[1]) : (d.amount ?? 1);
       if (amount > 0) items.push({ item: d.item, amount });
     }
+    boss.lootSpot = { dim, loc, chests: [] };
     if (!items.length) return;
     if (boss.config.loot?.mode === "ground") {
       for (const it of items) if (!Adapter.spawnItem(dim, it.item, it.amount, loc)) Log.warn(`drop "${it.item}" failed to spawn`);
       return;
     }
-    const placed = this.loot.place(dim, loc, items);
-    if (placed.length) Log.debug(`${boss.config.id}: loot chest at ${placed.map((p) => `${p.x} ${p.y} ${p.z}`).join(", ")}`);
+    boss.lootSpot.chests = this.loot.place(dim, loc, items);
+    if (boss.lootSpot.chests.length) Log.debug(`${boss.config.id}: loot chest at ${boss.lootSpot.chests.map((p) => `${p.x} ${p.y} ${p.z}`).join(", ")}`);
+  }
+
+  /**
+   * Loot from a skill (`dropItem`). While the boss lives it is kept for the loot chest; during the
+   * death sequence it goes into the chest placed at death (D7). loot.mode "ground" drops it at once.
+   * @param {BossInstance} boss @param {{ item: string, amount: number }[]} items
+   * @param {import("@minecraft/server").Vector3} at where a ground drop lands
+   */
+  addLoot(boss, items, at) {
+    if (boss.config.loot?.mode === "ground") {
+      for (const it of items) if (!Adapter.spawnItem(boss.dimension, it.item, it.amount, at)) Log.warn(`drop "${it.item}" failed to spawn`);
+      return;
+    }
+    if (!boss.dead) {
+      boss.pendingLoot.push(...items.map((it) => ({ item: it.item, amount: it.amount })));
+      this.save(boss);
+      return;
+    }
+    const spot = boss.lootSpot ?? { dim: boss.dimension, loc: boss.location, chests: [] };
+    spot.chests = spot.chests.length ? this.loot.add(spot.dim, spot.loc, spot.chests, items) : this.loot.place(spot.dim, spot.loc, items);
+    boss.lootSpot = spot;
   }
 
   /** @private Remove Behemoth entities on Peaceful (D6). */
