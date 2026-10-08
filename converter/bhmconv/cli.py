@@ -110,17 +110,24 @@ def _plain(text: str) -> str:
 
 
 def place_boss_bar(source: Path, dest: Path, layout: dict) -> list[str]:
-    """Draws bossbar.png onto the HUD's 512x128 canvas (2048x512 px). layout {width | scale, x, y}
-    (behemoth.json mobs.<MOB>.bossbar_layout): width in GUI units (the vanilla bar is 182 wide), or
-    scale (1 = 256 units, the template's width); the aspect is kept. x/y move it in GUI units
-    (+x right, +y down) from centred on the template area. Returns report notes."""
+    """Draws bossbar.png onto the HUD's 512x128 canvas (2048x512 px). layout {width, height, x, y}
+    (behemoth.json mobs.<MOB>.bossbar_layout) in GUI units (the vanilla bar is 182 wide): width alone
+    keeps the image's shape, height alone too, both stretch it; "scale" (1 = 256 wide) also works.
+    x/y move it (+x right, +y down) from centred on the template area. Returns report notes."""
     from PIL import Image  # converter/requirements.txt
 
-    width = float(layout["width"]) if "width" in layout else BAR_DEFAULT_WIDTH * float(layout.get("scale", 1))
-    dx, dy = float(layout.get("x", 0)), float(layout.get("y", 0))
     art = Image.open(source).convert("RGBA")
+    aspect = art.height / art.width
+    if layout.get("width"):
+        width = float(layout["width"])
+    elif layout.get("height"):
+        width = float(layout["height"]) / aspect
+    else:
+        width = BAR_DEFAULT_WIDTH * float(layout.get("scale") or 1)
+    height = float(layout["height"]) if layout.get("height") else width * aspect
+    dx, dy = float(layout.get("x") or 0), float(layout.get("y") or 0)
     w = max(1, round(width * BAR_PX))
-    h = max(1, round(w * art.height / art.width))
+    h = max(1, round(height * BAR_PX))
     canvas = Image.new("RGBA", (BAR_CANVAS[0] * BAR_PX, BAR_CANVAS[1] * BAR_PX), (0, 0, 0, 0))
     cx, cy = (BAR_DEFAULT_CENTRE[0] + dx) * BAR_PX, (BAR_DEFAULT_CENTRE[1] + dy) * BAR_PX
     left, top = round(cx - w / 2), round(cy - h / 2)
@@ -131,7 +138,10 @@ def place_boss_bar(source: Path, dest: Path, layout: dict) -> list[str]:
     canvas.save(dest)
     notes = []
     if layout:
-        notes.append(f"boss bar layout: {width:g} GUI units wide, x {dx:g}, y {dy:g}")
+        notes.append(f"boss bar layout: {round(width, 1):g} x {round(height, 1):g} GUI units, x {dx:g}, y {dy:g}")
+        if abs(height - width * aspect) > max(1.0, 0.03 * height):
+            notes.append(f"boss bar image stretched: {width:g} x {height:g} differs from its shape "
+                         f"(keep it: height {width * aspect:.1f} for width {width:g}) [approximate]")
     if left < 0 or top < 0 or left + w > canvas.width or top + h > canvas.height:
         notes.append(f"boss bar image is cut off at the canvas edge ({BAR_CANVAS[0]}x{BAR_CANVAS[1]} GUI units): "
                      "make bossbar_layout smaller or move it")
@@ -140,6 +150,7 @@ def place_boss_bar(source: Path, dest: Path, layout: dict) -> list[str]:
 
 from .bake import Skeleton, bake_animation, rest_position
 from .entity import (
+    MAX_COLLISION_WIDTH,
     add_scripted_death, build_base_controller, build_render_controller, complete_behavior, death_duration_ticks,
     find_death_event, geometry_size, movement_speed, patch_behavior, patch_client_entity, render_controller_id,
 )
@@ -207,7 +218,7 @@ def _manifests(pack: dict, display: str) -> tuple[dict, dict]:
 
 ENTITY_KEYS = ("behavior", "client_entity", "geometry", "animations", "animation_controllers", "textures",
                "bone_aliases", "blades", "identifier", "auto", "bossbar", "bossbar_layout", "link_all_animations",
-               "always_animate")
+               "always_animate", "collision_box")
 
 
 def _entity_specs(job: dict) -> list[dict]:
@@ -585,6 +596,15 @@ def build_entity(spec: dict, job: dict, src: Path, out: Path, mobs: dict, skills
     # ---------------- config ----------------
     if spec.get("auto"):
         behavior = complete_behavior(behavior, mobs[spec["mob"]], geometry_size(geo), notes)
+    box = {k: v for k, v in (spec.get("collision_box") or {}).items() if k in ("width", "height") and v}
+    if box:
+        comps = behavior["minecraft:entity"].setdefault("components", {})
+        comps["minecraft:collision_box"] = {**comps.get("minecraft:collision_box", {"width": 0.6, "height": 1.8}), **box}
+        notes.append(f"collision box {comps['minecraft:collision_box']} (behemoth.json collision_box)")
+    width = behavior["minecraft:entity"].get("components", {}).get("minecraft:collision_box", {}).get("width", 0)
+    if width > MAX_COLLISION_WIDTH:
+        notes.append(f"collision box {width} wide: Bedrock mobs wider than {MAX_COLLISION_WIDTH} may not walk "
+                     f"(walk animation, no movement); set mobs.{spec['mob']}.collision_box.width in behemoth.json [VERIFY]")
         if not find_death_event(behavior) and "death" in action_anims:
             length = float(all_anims[action_anims["death"]].get("animation_length", 2) or 2)
             behavior = add_scripted_death(behavior, max(2.0, length + 1.5), notes)
@@ -602,11 +622,14 @@ def build_entity(spec: dict, job: dict, src: Path, out: Path, mobs: dict, skills
               "resetAfterNoPlayers": tuning.get("reset_after_no_players", 600),
               **({"stopDistance": tuning["stop_distance"]} if "stop_distance" in tuning else {})}
     else:
-        ai = {"default": "frozen" if tb["noAI"] else "chase", "targetRange": tb["targetRange"], "vanillaMelee": False,
-              **({"faceTarget": False} if tb["noAI"] else {}),
+        frozen = tb["noAI"] or spec.get("effect")
+        ai = {"default": "frozen" if frozen else "chase", "targetRange": tb["targetRange"], "vanillaMelee": False,
+              **({"faceTarget": False} if frozen else {}),
               **({"stopDistance": tuning["stop_distance"]} if "stop_distance" in tuning else {})}
         if tb["noAI"]:
             notes.append("NoAI → ai.default frozen, faceTarget false (effect entity)")
+        elif spec.get("effect"):
+            notes.append("no model folder: generated an invisible effect entity (empty model); ai.default frozen")
     # Boss bar (framework HUD, L45): the HUD draws textures/behemoth/bossbars/<bar name>.png on every bar.
     # With a custom bossbar.png the bar name is a key (bhmbar_...) and the HUD hides the bar text; else
     # the bar shows the plain name (the game strips colour codes) and gets an empty image.

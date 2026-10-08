@@ -44,3 +44,14 @@ kitchen_spark:
   - matchrotation @parent ~onSpawn
   - remove{delay=40} @self ~onSpawn
   - damage{a=1} @PlayersInRadius{r=1} ~onTimer:10
+
+# Invisible effect mob without a model folder: folder mode generates an empty entity for it.
+kitchen_puddle:
+  Type: CHICKEN
+  Display: '&aPuddle'
+  Health: 10
+  Options:
+    Invisible: true
+    MovementSpeed: 0
+  Skills:
+  - skill{s=ks_puddle} @self ~onSpawn

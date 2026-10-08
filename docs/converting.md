@@ -74,13 +74,17 @@ private/Wendigo/report.md              what was converted, approximated or skipp
 - `summon{t=MOB}` of a converted mob spawns its entity automatically. A summon of a MythicMobs mob
   that has **no folder** is skipped and listed under "Needs you" (e.g. a heart you chose not to
   convert). `summon{t=ZOMBIE}` and other vanilla mobs work as they are.
+- **Invisible effect mobs need no folder.** A summoned mob with `Options: Invisible: true` (or of type
+  `ARMOR_STAND`/`MARKER`) and no folder, such as a damage puddle or a telegraph marker, gets a generated
+  invisible entity (empty model) that runs its skills in place. It is listed under Info.
 - **Two mobs with one model:** give each its own folder with the same files, and give the second one
   another entity id in `behemoth.json` (`"mobs": { "MOB_2": { "identifier": "pack:mob_2" } }`).
 - Mobs from another pack's YAML (mixed packs) work the same way: only folders are converted.
 
 ## 4. What is done for you
 
-- A **bare behavior file** gets health (`Health`), a collision box from the model size, walking and
+- A **bare behavior file** gets health (`Health`), a collision box from the model size (at most 2
+  blocks wide: wider bosses can stop walking on Bedrock; `behemoth.json` `collision_box` changes it), walking and
   pathfinding, follow range, knockback resistance and immunities (`DamageModifiers` of 0), plus the
   Behemoth AI groups and properties. Anything already in the file is kept.
 - With a `death` animation, a **scripted death**: the boss stays while the death animation and death
@@ -135,13 +139,17 @@ After the pack is built and you have seen it in game, adjust the art in `behemot
 converter again and deploy:
 
 ```json
-"mobs": { "WENDIGO": { "bossbar_layout": { "width": 196, "x": 0, "y": -1.5 } } }
+"mobs": { "WENDIGO": { "bossbar_layout": { "width": 196, "height": 39, "x": 0, "y": -1.5 } } }
 ```
+
+`behemoth.json` already shows the current values (filled in from your image), so you only change
+numbers.
 
 - Units are GUI pixels. The vanilla bar is **182 wide and 5 tall**, so a frame drawn 1 pixel per GUI
   pixel around it is `"width"` = the image's own width in pixels.
-- `width`: how wide the art is drawn; the height follows the image's shape. You can use `"scale"`
-  instead: 1 = 256 wide, which is the template's width.
+- `width`, `height`: the size of the art. To keep the image's shape, change both by the same factor,
+  or delete `height` (it is then worked out from `width` and written back). Different proportions
+  stretch the image; the report says so. `"scale"` still works too: 1 = 256 wide (the template).
 - `x`, `y`: move the art (+x right, +y down). At 0, 0 the art is centred on the template's area, whose
   centre is 1.5 below the bar's centre. A frame centred on the bar therefore needs `"y": -1.5`.
 - The art can be up to 512 × 128 around the bar. If it goes past that edge, the report says so under
@@ -167,7 +175,8 @@ the conversion with a message instead of being ignored. An example with values:
       "bone_aliases": { "stones_modelpart": "stones" },
       "blades": ["sword"],
       "always_animate": ["passive"],
-      "bossbar_layout": { "width": 196, "x": 0, "y": -1.5 },
+      "bossbar_layout": { "width": 196, "height": 39, "x": 0, "y": -1.5 },
+      "collision_box": { "width": 2.0, "height": 4.5 },
       "tuning": { "stop_distance": 2.5 }
     }
   },
@@ -193,6 +202,8 @@ the conversion with a message instead of being ignored. An example with values:
 - **Never change or delete `pack.uuids`**: worlds and the framework recognise the pack by them. Raise
   `pack.version` when you publish an update.
 - `blades`: weapon bones whose hits follow the blade from hilt to tip.
+- `collision_box`: the mob's hitbox in blocks (shown with the current value). Bedrock mobs wider than
+  about 2 blocks may play their walk animation without moving.
 - `bone_aliases`: a ModelEngine part name the YAML uses → the Bedrock bone that stands for it.
 - `items`: MythicMobs custom items (`dropitem{i=...}` and the mob's `Drops`) → a Bedrock item id. Vanilla names (`DIAMOND`) work
   without it.

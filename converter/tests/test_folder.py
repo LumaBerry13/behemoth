@@ -53,7 +53,7 @@ def test_finished_pack_and_addon(folder):
 
 def test_boss_minions_and_settings(folder):
     index = (folder / "pack" / "BP" / "scripts" / "bosses" / "index.js").read_text(encoding="utf-8")
-    assert "export default [kitchen_boss, kitchen_spark]" in index      # the boss is the mob nobody summons
+    assert "export default [kitchen_boss, kitchen_spark, kitchen_puddle]" in index  # the boss is the mob nobody summons
     spark = (folder / "pack" / "BP" / "scripts" / "bosses" / "kitchen_spark.js").read_text(encoding="utf-8")
     assert 'id: "kitchen:spark"' in spark and 'kind: "minion"' in spark  # identifier from behemoth.json
 
@@ -92,7 +92,7 @@ def test_custom_boss_bar_key_and_layout(folder):
     cfg = (folder / "pack" / "BP" / "scripts" / "bosses" / "kitchen_boss.js").read_text(encoding="utf-8")
     assert 'barKey: "bhmbar_test_kitchen"' in cfg and 'name: "Kitchen Sink"' in cfg
     report = (folder / "report.md").read_text(encoding="utf-8")
-    assert "182 GUI units wide" in report and "cut off" not in report
+    assert "boss bar layout: 182 x 20 GUI units" in report and "cut off" not in report and "stretched" not in report
 
 
 def test_configs_pass_the_js_validator(folder):
@@ -131,6 +131,9 @@ def test_settings_file_lists_every_entry(folder):
     assert data["mobs"]["kitchen_boss"]["bossbar_layout"]["width"] == 182          # user value kept
     assert data["mobs"]["kitchen_spark"]["blades"] == [] and "bossbar_layout" not in data["mobs"]["kitchen_spark"]
     assert data["tuning"]["stop_distance"] is None and data["tuning"]["trigger_overrides"] == {}
+    layout = data["mobs"]["kitchen_boss"]["bossbar_layout"]
+    assert layout["height"] == 20.0 and "scale" not in layout                      # filled from the image's shape
+    assert data["mobs"]["kitchen_boss"]["collision_box"]["width"] > 0               # effective collision box shown
     assert main([str(folder)]) == 0                                                # the empty entries change nothing
 
 
@@ -149,3 +152,19 @@ def test_java_sounds_json_names_the_events(tmp_path):
     assert main([str(f)]) == 0
     defs = json.loads((f / "pack" / "RP" / "sounds" / "sound_definitions.json").read_text(encoding="utf-8"))["sound_definitions"]
     assert defs["ks.bellow"]["sounds"][0]["name"].endswith("/growl") and "kitchen_sink.growl" not in defs
+
+
+def test_invisible_effect_mob_without_folder_is_generated(folder):
+    # kitchen_puddle: Invisible, no model folder, summoned by the boss → an empty invisible entity.
+    bp, rp = folder / "pack" / "BP", folder / "pack" / "RP"
+    ent = json.loads((bp / "entities" / "kitchen_puddle.json").read_text(encoding="utf-8"))
+    assert ent["minecraft:entity"]["description"]["identifier"] == "test:kitchen_puddle"
+    assert "minecraft:boss" not in ent["minecraft:entity"]["components"]
+    cfg = (bp / "scripts" / "bosses" / "kitchen_puddle.js").read_text(encoding="utf-8")
+    assert 'kind: "minion"' in cfg and 'default: "frozen"' in cfg
+    assert 'm: "teleport", o: { setY: -15 }, t: "@self"' in cfg and 'm: "percentDamage"' in cfg
+    assert (rp / "entity" / "kitchen_puddle.entity.json").exists()
+    boss = (bp / "scripts" / "bosses" / "kitchen_boss.js").read_text(encoding="utf-8")
+    assert 'type: "test:kitchen_puddle"' in boss                                     # the summon maps to it
+    report = (folder / "report.md").read_text(encoding="utf-8")
+    assert "generated an invisible effect entity" in report and "kitchen_puddle' skipped" not in report

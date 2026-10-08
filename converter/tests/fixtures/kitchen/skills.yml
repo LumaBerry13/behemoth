@@ -147,3 +147,12 @@ ks_steel:
   - damage{a=3} @LivingInCone{a=110.0;r=4.5;rot=-20.0}
   - look{headOnly=false;immediately=true;f=true;fp=true} @Target
   - stopsound{s=minecraft:mythic.kitchen_hum} @PIR{r=40}
+  - summon{type=kitchen_puddle;amount=1} @Self
+
+ks_puddle:
+  Skills:
+  - particlering{particle=dragon_breath;radius=5;points=32;amount=5;hS=1;vS=0.25} @self
+  - damage{a=1} @PIR{r=7}
+  - delay 4
+  - teleportY{y=-15}
+  - damagepercent{percent=1} @self

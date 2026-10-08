@@ -250,7 +250,8 @@ VANILLA_MOBS = {
 # Other spellings of a mechanic (MythicMobs accepts both).
 MECHANIC_ALIASES = {"effect:sound": "sound", "e:sound": "sound", "e:s": "sound", "s": "sound",
                     "partvisibility": "partvis", "effect:partvisibility": "partvis",
-                    "removepotion": "potionclear", "clearpotions": "potionclear", "dropitems": "dropitem"}
+                    "removepotion": "potionclear", "clearpotions": "potionclear", "dropitems": "dropitem",
+                    "damagepercent": "percentdamage"}
 
 # Mechanics that only drive ModelEngine / Java behaviour — no Bedrock equivalent needed.
 SKIPPED_MECHANICS = {
@@ -1003,6 +1004,9 @@ def translate_line(sl: SkillLine, ctx: Context, where: str) -> dict[str, Any] | 
         line = {"m": "heal", "o": {"amount": _num(_opt(o, "amount", "a", default=1))}}
     elif n == "healpercent":
         line = {"m": "heal", "o": {"percent": float(_opt(o, "multiplier", "m", "percent", "p", default=0.1))}}
+    elif n in ("teleporty", "tpy"):
+        # MythicMobs teleportY: to an absolute height, same x/z (effect mobs sink out of sight before dying).
+        line = {"m": "teleport", "o": {"setY": _num(_opt(o, "y", default=0))}, "t": "@self"}
     elif n == "percentdamage":
         line = {"m": "percentDamage", "o": {"percent": float(_opt(o, "percent", "p", default=0.1)),
                                             **({"current": True} if _opt(o, "currenthealth", "ch") is True else {})}}

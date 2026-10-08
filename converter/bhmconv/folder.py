@@ -92,8 +92,11 @@ def scan_entity(folder: Path) -> dict:
 # behemoth.json: every editable entry, in file order (docs/converting.md section 7). Empty values
 # ("", null, {}, []) mean "not set"; the converter writes all of them so the file shows what can be set.
 PACK_KEYS = ("name", "id", "version", "uuids")
-MOB_TEMPLATE: dict[str, Any] = {"identifier": "", "bone_aliases": {}, "blades": [], "always_animate": [], "tuning": {}}
-BOSSBAR_TEMPLATE: dict[str, Any] = {"width": None, "scale": None, "x": 0, "y": 0}
+MOB_TEMPLATE: dict[str, Any] = {"identifier": "", "bone_aliases": {}, "blades": [], "always_animate": [],
+                                "collision_box": {}, "tuning": {}}
+# The boss bar art: width/height in GUI units (the vanilla bar is 182 wide); the defaults are filled in
+# from the image (256 wide, height from its shape). "scale" (1 = 256 wide) is still read.
+BOSSBAR_TEMPLATE: dict[str, Any] = {"width": None, "height": None, "x": 0, "y": 0}
 TUNING_TEMPLATE: dict[str, Any] = {
     "damage_multiplier": None, "ignore_difficulty": False, "stop_distance": None, "leash_range": None,
     "reset_after_no_players": None, "randomskill_mode": "", "trigger_overrides": {}, "option_overrides": {},
@@ -126,8 +129,9 @@ def _copy(v: Any) -> Any:
     return json.loads(json.dumps(v))
 
 
-def with_template(settings: dict, mob_ids: list[str], boss: str) -> dict:
-    """The user's settings (kept as they are) plus every missing editable entry, empty."""
+def with_template(settings: dict, defaults: dict[str, dict], boss: str) -> dict:
+    """The user's settings (kept as they are) plus every missing editable entry. defaults: mob id →
+    values shown for unset entries (collision_box, bossbar_layout) so there is something to edit."""
     out: dict = {"_help": HELP}
     for key, default in TEMPLATE.items():
         value = settings.get(key, _copy(default))
@@ -135,13 +139,43 @@ def with_template(settings: dict, mob_ids: list[str], boss: str) -> dict:
             value = {**_copy(TUNING_TEMPLATE), **value}
         if key == "mobs" and isinstance(value, dict):
             value = dict(value)
-            for mob in mob_ids:
+            for mob, mob_defaults in defaults.items():
                 have = next((k for k in value if k.lower() == mob.lower()), mob)
                 entry = {**_copy(MOB_TEMPLATE), **(value.get(have) or {})}
-                if mob == boss:
-                    entry["bossbar_layout"] = {**_copy(BOSSBAR_TEMPLATE), **(entry.get("bossbar_layout") or {})}
+                keys = ["collision_box"] + (["bossbar_layout"] if mob == boss else [])
+                for k in keys:
+                    base = {**(_copy(BOSSBAR_TEMPLATE) if k == "bossbar_layout" else {}), **(entry.get(k) or {})}
+                    for dk, dv in (mob_defaults.get(k) or {}).items():
+                        if base.get(dk) is None:
+                            base[dk] = dv
+                    if k == "bossbar_layout" and base.get("scale") is None:
+                        base.pop("scale", None)
+                    entry[k] = base
                 value[have] = entry
         out[key] = value
+    return out
+
+
+def entity_defaults(folder: Path, spec: dict, layout: dict | None) -> dict:
+    """What an unset collision_box / bossbar_layout currently means for this mob (shown in behemoth.json)."""
+    from .entity import geometry_size  # noqa: PLC0415
+
+    beh = _load_json(Path(folder) / spec["behavior"])
+    box = (beh.get("minecraft:entity", {}).get("components") or {}).get("minecraft:collision_box")
+    if not box:
+        w, h = geometry_size(_load_json(Path(folder) / spec["geometry"]))
+        box = {"width": w, "height": h}
+    out: dict = {"collision_box": {"width": box.get("width"), "height": box.get("height")}}
+    if spec.get("bossbar"):
+        from PIL import Image  # noqa: PLC0415 (converter/requirements.txt)
+
+        with Image.open(Path(folder) / spec["bossbar"]) as im:
+            aspect = im.height / im.width
+        layout = layout or {}
+        width = layout.get("width") or (256 * float(layout["scale"]) if layout.get("scale") else 256)
+        out["bossbar_layout"] = {"width": round(width, 1), "height": round(width * aspect, 1)}
+    else:
+        out["bossbar_layout"] = {"width": 256, "height": 64}
     return out
 
 
@@ -164,6 +198,61 @@ def check_settings(settings: dict) -> list[str]:
         if key not in TUNING_TEMPLATE:
             problems.append(f"behemoth.json: tuning has an unknown entry '{key}' (entries: {', '.join(TUNING_TEMPLATE)})")
     return problems
+
+
+# MythicMobs effect mobs (puddles, telegraph markers, slash effects) are often invisible vanilla mobs
+# without a ModelEngine model. Summoned ones without a folder get a generated invisible entity.
+EFFECT_TYPES = {"ARMOR_STAND", "MARKER", "AREA_EFFECT_CLOUD", "ITEM_DISPLAY", "BLOCK_DISPLAY", "TEXT_DISPLAY"}
+_effect_dir: Path | None = None
+
+
+def is_effect_mob(mob: dict) -> bool:
+    opts = mob.get("Options") or {}
+    return bool(opts.get("Invisible")) or str(mob.get("Type", "")).upper() in EFFECT_TYPES
+
+
+def _summoned(mob_id: str, text: str) -> bool:
+    return bool(re.search(r"summon\{[^}]*(?:type|t|mob|m)=" + re.escape(mob_id) + r"[;}]", text, re.I))
+
+
+def effect_mob_files(mob_id: str, identifier: str) -> dict:
+    """Writes an invisible entity (empty model, one empty looping idle animation) for an effect mob
+    into a temporary folder; returns the spec keys pointing at it (absolute paths)."""
+    import atexit
+    import shutil
+    import tempfile
+
+    global _effect_dir
+    if _effect_dir is None:
+        _effect_dir = Path(tempfile.mkdtemp(prefix="bhm_effect_"))
+        atexit.register(shutil.rmtree, _effect_dir, True)
+    slug = _slug(mob_id)
+    d = _effect_dir / slug
+    d.mkdir(parents=True, exist_ok=True)
+    files = {
+        "behavior": {"format_version": "1.21.0", "minecraft:entity": {
+            "description": {"identifier": identifier, "is_spawnable": False, "is_summonable": True},
+            "components": {"minecraft:collision_box": {"width": 0.5, "height": 0.5}}}},
+        "client_entity": {"format_version": "1.10.0", "minecraft:client_entity": {"description": {
+            "identifier": identifier, "materials": {"default": "entity_alphatest"},
+            "textures": {"default": f"textures/entity/{slug}"}, "geometry": {"default": f"geometry.{slug}"},
+            "render_controllers": ["controller.render.default"], "animations": {"idle": f"animation.{slug}.idle"}}}},
+        "geometry": {"format_version": "1.12.0", "minecraft:geometry": [{
+            "description": {"identifier": f"geometry.{slug}", "texture_width": 16, "texture_height": 16},
+            "bones": [{"name": "root", "pivot": [0, 0, 0]}]}]},
+        "animation": {"format_version": "1.8.0", "animations": {
+            f"animation.{slug}.idle": {"loop": True, "animation_length": 1.0, "bones": {}}}},
+    }
+    paths = {}
+    for key, data in files.items():
+        paths[key] = d / f"{slug}.{key}.json"
+        paths[key].write_text(json.dumps(data, indent=2), encoding="utf-8")
+    png = d / f"{slug}.png"
+    from .cli import EMPTY_PNG  # noqa: PLC0415 (cli imports this module)
+    png.write_bytes(EMPTY_PNG)
+    return {"behavior": str(paths["behavior"]), "client_entity": str(paths["client_entity"]),
+            "geometry": str(paths["geometry"]), "animations": [str(paths["animation"])], "animation_controllers": [],
+            "textures": {str(png): f"textures/entity/{slug}.png"}, "link_all_animations": True}
 
 
 def build_job(folder: Path) -> tuple[dict, Callable[[dict], None], list[str]]:
@@ -215,7 +304,8 @@ def build_job(folder: Path) -> tuple[dict, Callable[[dict], None], list[str]]:
             "geometry": rel(found["geometry"]), "animations": [rel(a) for a in found["animations"]],
             "animation_controllers": [rel(a) for a in found["animation_controllers"]], "textures": textures,
             **({"bossbar": rel(found["bossbar"])} if found["bossbar"] else {}),
-            **{k: ms[k] for k in ("identifier", "bone_aliases", "blades", "always_animate", "tuning", "bossbar_layout") if k in ms},
+            **{k: ms[k] for k in ("identifier", "bone_aliases", "blades", "always_animate", "tuning", "bossbar_layout",
+                                "collision_box") if k in ms},
         })
     if not specs and not problems:
         problems.append("no mob folders found (a folder named after a MythicMobs mob id, holding its Bedrock files)")
@@ -233,6 +323,16 @@ def build_job(folder: Path) -> tuple[dict, Callable[[dict], None], list[str]]:
         boss_id = max(candidates, key=lambda m: float(mobs[m].get("Health", 0) or 0))
     main = next(s for s in specs if s["mob"].lower() == str(boss_id).lower())
     minions = [dict(s, kind="minion") for s in specs if s is not main]
+    namespace = str(_load_json(folder / main["behavior"])["minecraft:entity"]["description"]["identifier"]).split(":")[0]
+    have = {s["mob"].lower() for s in specs}
+    for mob_id, mob in mobs.items():
+        if mob_id.lower() in have or not is_effect_mob(mob) or not _summoned(mob_id, text):
+            continue
+        ms = mob_settings.get(mob_id.lower(), {})
+        minions.append({**effect_mob_files(mob_id, ms.get("identifier") or f"{namespace}:{_slug(mob_id)}"),
+                        "boss": _slug(mob_id), "mob": mob_id, "auto": True, "kind": "minion", "effect": True,
+                        **{k: ms[k] for k in ("tuning",) if k in ms}})
+        specs.append(minions[-1])
 
     pack = dict(settings.get("pack") or {})
     # Colour codes (&5, §5) belong to the in-game name, not to the pack name or id.
@@ -257,7 +357,10 @@ def build_job(folder: Path) -> tuple[dict, Callable[[dict], None], list[str]]:
         job["tuning"] = {**job.get("tuning", {}), **main["tuning"]}
 
     def save(j: dict) -> None:
-        out = with_template(raw_settings, [sp["mob"] for sp in specs], main["mob"])
+        mob_settings_raw = {str(k).lower(): v or {} for k, v in (raw_settings.get("mobs") or {}).items()}
+        defaults = {sp["mob"]: entity_defaults(folder, sp, _drop_empty(mob_settings_raw.get(sp["mob"].lower(), {})).get("bossbar_layout"))
+                    for sp in specs}
+        out = with_template(raw_settings, defaults, main["mob"])
         out["pack"] = {**(out.get("pack") or {}), **j["pack"]}
         settings_path.write_text(json.dumps(out, indent=2) + "\n", encoding="utf-8", newline="\n")
 

@@ -272,9 +272,14 @@ def patch_client_entity(client: dict, boss: str, notes: list[str], identifier: s
 # Folder mode: complete a bare (Blockbench) behavior file
 # --------------------------------------------------------------------------- #
 
+# Wider collision boxes stall Bedrock pathfinding (owner, 2026-10-09: walk animation, no movement) [VERIFY].
+MAX_COLLISION_WIDTH = 2.0
+
+
 def geometry_size(geo: dict) -> tuple[float, float]:
     """Collision box (width, height) in blocks from the model's cubes: arms and antlers stick out,
-    so width = 0.6 × the narrower horizontal extent and height = 0.75 × the top."""
+    so width = 0.6 × the narrower horizontal extent and height = 0.75 × the top. Width is capped at
+    MAX_COLLISION_WIDTH: a 3-wide boss (Piglin Glutton) played its walk animation without moving."""
     xs, ys, zs = [], [], []
     for g in geo.get("minecraft:geometry", []):
         for b in g.get("bones", []):
@@ -287,7 +292,7 @@ def geometry_size(geo: dict) -> tuple[float, float]:
         return 0.6, 1.8
     width = min(max(xs) - min(xs), max(zs) - min(zs)) / 16 * 0.6
     height = max(ys) / 16 * 0.75
-    return round(min(3.0, max(0.6, width)), 1), round(min(6.0, max(0.5, height)), 1)
+    return round(min(MAX_COLLISION_WIDTH, max(0.6, width)), 1), round(min(6.0, max(0.5, height)), 1)
 
 
 def complete_behavior(behavior: dict, mob: dict, size: tuple[float, float], notes: list[str]) -> dict:
