@@ -290,6 +290,13 @@ export default {
         { m: "damage", o: { amount: 3 }, t: "@Cone{angle=60;r=6;rotation=90}" },
       ],
     },
+    // Snap to face the target even while facing is locked, and stop a sound for nearby players.
+    demo_look: {
+      c: [
+        { m: "look", t: "@target" },
+        { m: "stopSound", o: { sound: "mob.zombie.say" } },
+      ],
+    },
     // Only melee hits make it bleed (damageCause).
     bleed: {
       tr: "onDamaged",

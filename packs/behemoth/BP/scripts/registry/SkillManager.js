@@ -145,6 +145,8 @@ import partVisibility from "../modules/mechanics/part_visibility.js";
 import grab from "../modules/mechanics/grab.js";
 import potionClear from "../modules/mechanics/potion_clear.js";
 import dropItem from "../modules/mechanics/drop_item.js";
+import look from "../modules/mechanics/look.js";
+import stopSound from "../modules/mechanics/stop_sound.js";
 
 import self from "../modules/targeters/self.js";
 import target from "../modules/targeters/target.js";
@@ -288,6 +290,8 @@ export function bindModules(sm) {
   sm.bind("grab", grab);
   sm.bind("potionClear", potionClear);
   sm.bind("dropItem", dropItem);
+  sm.bind("look", look);
+  sm.bind("stopSound", stopSound);
 
   sm.bindTargeter("self", self);
   sm.bindTargeter("target", target);

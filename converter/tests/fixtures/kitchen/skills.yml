@@ -145,3 +145,5 @@ ks_steel:
   - partvisibility{m=kitchen;p=arm;v=false}
   - dropitem{i=DIAMOND} @ModelPart{m=kitchen;p=arm}
   - damage{a=3} @LivingInCone{a=110.0;r=4.5;rot=-20.0}
+  - look{headOnly=false;immediately=true;f=true;fp=true} @Target
+  - stopsound{s=minecraft:mythic.kitchen_hum} @PIR{r=40}

@@ -912,6 +912,17 @@ console.log("\n33. partVisibility, grab, damageCause, onAttack from a cancelled 
     check("…and does nothing in the air (!onBlock{blocks=air})", !mc.log.slice(s6).some(([, k]) => k === "drop"));
     d.e.location = { ...d.e.location, y: 64 };
     d.boss.facingLocked = false;
+
+    // look + stopSound (Piglin Glutton): a locked boss still snaps to its target once.
+    d.boss.facingLocked = true;
+    d.e.rotation.y = 0;
+    d.player.location = { x: d.e.location.x + 5, y: d.e.location.y, z: d.e.location.z };
+    const s7 = mc.log.length;
+    d.run("demo_look", 2);
+    check("look turns a locked boss to face its target", Math.abs(d.e.rotation.y + 90) < 1, `${d.e.rotation.y}`);
+    check("…and the lock stays", d.boss.facingLocked === true);
+    check("stopSound runs /stopsound for nearby players", mc.log.slice(s7).some(([, k, x]) => k === "command" && x.endsWith("stopsound @s mob.zombie.say")));
+    d.boss.facingLocked = false;
   }
 }
 

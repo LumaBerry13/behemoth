@@ -99,6 +99,8 @@ def test_archivist_style_mappings(out):
     assert 'm: "dropItem", o: { items: [{ item: "minecraft:diamond", amount: 1 }] }, t: "@Bone{bone=arm}"' in js
     assert '"@Cone{angle=110.0;r=4.5;rotation=-20.0}"' in js
     assert "magic: -1" in js                                                 # POISON has no Bedrock cause
+    assert '{ m: "look", o: {}, t: "@target" }' in js
+    assert 'm: "stopSound", o: { sound: "mythic.kitchen_hum" }, t: "@PlayersInRadius{r=40.0}"' in js
     assert 'drops: [{ item: "minecraft:diamond", amount: [1, 3], chance: 0.5 }, { item: "minecraft:emerald", amount: 2 }]' in js
     index = (out / "BP" / "scripts" / "bosses" / "index.js").read_text(encoding="utf-8")
     assert "export default [kitchen, kitchen_spark]" in index

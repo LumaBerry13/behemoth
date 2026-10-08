@@ -466,6 +466,18 @@ def _fmt_opts(o: dict[str, Any]) -> str:
     return "{" + ";".join(parts) + "}" if parts else ""
 
 
+def _resolve_sound(mm: str, ctx: "Context", where: str) -> str:
+    """A MythicMobs sound id → the Bedrock sound event (pack sounds from sounds/, Java vanilla names)."""
+    snd = ctx.sounds.get(mm, mm)
+    if snd == mm and ":" in mm and ctx.sounds.get(mm.split(":", 1)[1]):
+        snd = ctx.sounds[mm.split(":", 1)[1]]
+    if mm in ctx.sounds:
+        ctx.used_mechanics.add("__sound_mapped")
+    snd = _bedrock_sound(snd, mm, ctx, where)
+    # Bedrock sound events have no namespace ("minecraft:mythic.boss_roar" is played as "mythic.boss_roar").
+    return snd.removeprefix("minecraft:")
+
+
 def _bedrock_sound(snd: str, mm: str, ctx: "Context", where: str) -> str:
     """Java vanilla sound names → Bedrock events; reports pack sounds without a file and unknown Java names."""
     if snd in ctx.sounds.values():
@@ -893,15 +905,18 @@ def translate_line(sl: SkillLine, ctx: Context, where: str) -> dict[str, Any] | 
     elif n == "removetag":
         line = {"m": "removeTag", "o": {"tag": str(_opt(o, "t", "tag"))}}
     elif n == "sound":
-        mm = str(_opt(o, "s", "sound", default=""))
-        snd = ctx.sounds.get(mm, mm)
-        if snd == mm and ":" in mm and ctx.sounds.get(mm.split(":", 1)[1]):
-            snd = ctx.sounds[mm.split(":", 1)[1]]
-        if mm in ctx.sounds:
-            ctx.used_mechanics.add("__sound_mapped")
-        snd = _bedrock_sound(snd, mm, ctx, where)
+        snd = _resolve_sound(str(_opt(o, "s", "sound", default="")), ctx, where)
         line = {"m": "sound", "o": {"sound": snd, "volume": _num(_opt(o, "v", "volume", default=1)),
                                      "pitch": _num(_opt(o, "p", "pitch", default=1))}}
+    elif n == "stopsound":
+        mm = str(_opt(o, "s", "sound", default=""))
+        line = {"m": "stopSound", "o": {"sound": _resolve_sound(mm, ctx, where)} if mm else {}}
+        if _opt(o, "category", "c") is not None:
+            ctx.note(where, "stopsound category ignored (Bedrock /stopsound stops by sound id only)")
+    elif n == "look":
+        line = {"m": "look", "o": {}}
+        if _opt(o, "headonly", "ho") is True:
+            ctx.note(where, "look headOnly approximated: the whole body turns")
     elif n == "aura":
         on_tick = _opt(o, "ontick", "ot")
         if not on_tick:
