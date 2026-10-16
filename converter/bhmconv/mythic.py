@@ -282,6 +282,7 @@ class Context:
     particles: dict[str, str] = field(default_factory=dict)  # job overrides for MM particle names
     bullets: dict[str, str] = field(default_factory=dict)  # job: projectile bullet model/material → entity id
     items: dict[str, str] = field(default_factory=dict)  # job: MythicMobs item name → Bedrock item id (dropitem)
+    collision: tuple[float, float] | None = None  # the mob's collision box (width, height), for boundingboxesoverlap
     base_damage: float = 1.0  # the mob's Damage (basedamage multiplies it)
     notes: list[str] = field(default_factory=list)
     used_mechanics: set[str] = field(default_factory=set)
@@ -721,6 +722,9 @@ def _cond_core(c: ConditionLine, ctx: Context, where: str, target_condition: boo
         return [f"{bang}directionalVelocity{{{';'.join(f'{k}={v}' for k, v in parts.items())}}}"]
     if n == "onground":
         return [f"{bang}onGround"]
+    if n in ("boundingboxesoverlap", "bbo"):
+        w, h = ctx.collision or (0.6, 1.8)
+        return [f"{bang}boundingBoxesOverlap{{w={w};h={h}}}"]
     if n == "onblock":
         blocks = str(_opt(o, "b", "blocks", "m", "material", "t", "type", default="")).lower().replace(",", "|")
         if not blocks:
@@ -757,17 +761,37 @@ def _cond_core(c: ConditionLine, ctx: Context, where: str, target_condition: boo
     return None
 
 
-def translate_condition(c: ConditionLine, ctx: Context, where: str, target_condition: bool = False) -> list[str]:
+def _negate(cond: str) -> str:
+    return cond[1:] if cond.startswith("!") else f"!{cond}"
+
+
+def translate_condition(c: ConditionLine, ctx: Context, where: str, target_condition: bool = False) -> list[Any]:
+    """Framework condition specs: strings, or {"any": [...]} for MythicMobs `( a || b )`."""
     if c.name.startswith("("):
         m = re.fullmatch(r"\((.*)\)\s*(true|false)?\s*", c.raw.strip(), re.I)
-        inner = m.group(1) if m else ""
-        if not m or "||" in inner or (m.group(2) or "true").lower() == "false":
-            ctx.note(where, f"compound condition '{c.raw}' (or / negated and) not supported; dropped")
+        if not m or ("||" in m.group(1) and "&&" in m.group(1)):
+            ctx.note(where, f"compound condition '{c.raw}' (|| mixed with &&) not supported; dropped")
             return []
-        out: list[str] = []
-        for part in inner.split("&&"):
-            out += translate_condition(parse_condition_line(part.strip()), ctx, where, target_condition)
-        return out
+        inner, negated = m.group(1), (m.group(2) or "true").lower() == "false"
+        is_or = "||" in inner
+        parts: list[str] = []
+        for part in inner.split("||" if is_or else "&&"):
+            sub = translate_condition(parse_condition_line(part.strip()), ctx, where, target_condition)
+            if is_or and len(sub) > 1:
+                ctx.note(where, f"compound condition '{c.raw}': '{part.strip()}' has {len(sub)} parts; only the first "
+                                f"is used inside the || [approximate]")
+                sub = sub[:1]
+            if any(not isinstance(x, str) for x in sub):
+                ctx.note(where, f"compound condition '{c.raw}': nested groups not supported; dropped")
+                return []
+            parts += sub
+        if not parts:
+            return []
+        # (a || b) → any; (a || b) false → !a, !b; (a && b) → a, b; (a && b) false → any(!a, !b).
+        if is_or != negated:
+            group = parts if is_or else [_negate(x) for x in parts]
+            return [{"any": group}] if len(group) > 1 else group
+        return [_negate(x) for x in parts] if negated else parts
     try:
         out = _cond_core(c, ctx, where, target_condition)
     except ValueError as e:
@@ -824,6 +848,13 @@ def _projectile(sl: SkillLine, ctx: Context, where: str, n: str) -> dict[str, An
     ti = _opt(o, "tickinterval", "ti", "interval", "i")
     if ti is not None and _ticks(ti) > 1:
         po["tickInterval"] = _ticks(ti)
+    tyo = _opt(o, "targetyoffset", "tyo")
+    if po.get("gravity") and tyo is not None and abs(float(tyo)) > 8:
+        # A high aim point plus gravity is a lobbed shot (mortar): fly an arc that lands on the target.
+        po["arc"] = round(min(16.0, abs(float(tyo)) / 4), 1)
+        del po["gravity"]
+        ctx.note(where, f"{n} tyo={tyo} with gravity → arc {po['arc']} blocks high landing on the target [approximate]")
+        o = {k: v for k, v in o.items() if k not in ("targetyoffset", "tyo", "sdir", "startdirection")}
     for mm, key in (("startyoffset", "startY"), ("syo", "startY"), ("startfoffset", "startForward"), ("sfo", "startForward"),
                     ("startsoffset", "startSide"), ("sso", "startSide"), ("targetyoffset", "targetY"), ("tyo", "targetY")):
         if mm in o and key not in po:
@@ -1224,6 +1255,21 @@ def translate_line(sl: SkillLine, ctx: Context, where: str) -> dict[str, Any] | 
         bone = re.match(r"@Bone\{bone=([^;}]+)", t)
         if n == "totem" and bone and bone.group(1) in ctx.blades:
             line["o"]["to"] = blade_tip(bone.group(1))
+    tconds_raw = sl.targeter[1].get("conditions") if sl.targeter else None
+    if tconds_raw and t:
+        # Targeter conditions (@EIR{r=24;conditions=[ - boundingboxesoverlap]}): a generated skill
+        # whose targetIf filters the targets, called with them.
+        tconds: list[Any] = []
+        for raw in inline_lines(str(tconds_raw)) if str(tconds_raw).strip().startswith("[") else [str(tconds_raw)]:
+            tconds += translate_condition(parse_condition_line(raw), ctx, where, target_condition=True)
+        if tconds:
+            name, k = f"{_ident(where)}_targets", 2
+            while name in ctx.extra_skills:
+                name, k = f"{_ident(where)}_targets_{k}", k + 1
+            inner = {key: v for key, v in line.items() if key != "t"}
+            ctx.extra_skills[name] = {"targetIf": tconds, "c": [inner]}
+            line = {"m": "skill", "o": {"skill": name}, "t": t}
+            ctx.used_mechanics.add("skill")
     # Generic MythicMobs line options.
     if "delay" in o and n != "delay":
         line["delay"] = _ticks(o["delay"])

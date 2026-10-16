@@ -11,12 +11,14 @@
 // Bullets are bound to the boss (removed if it dies) and removed when the
 // projectile ends. Projectiles keep flying when the casting skill ends; the
 // boss dying or resetting stops them. homing (0-1) steers it toward a moving
-// entity target every tick (MythicMobs missile).
+// entity target every tick (MythicMobs missile). arc (blocks) lobs it instead: it flies a parabola
+// that high above the straight line and lands exactly on the target point (mortar shots), at
+// `speed` blocks per tick along the ground plus the climb.
 // o: { particle?, bullet?, speed?=0.8 (blocks/tick), gravity?=0, inertia?=1,
 //      range?=24, maxTicks?=200, radius?=0.8, verticalRadius?=radius,
 //      startY?=1.5, startForward?=0, startSide?=0, targetY?, origin?, toward?,
 //      hugSurface?=false, stopAtEntity?=true, stopAtBlock?=true,
-//      hitPlayers?=true, hitNonPlayers?=false, tickInterval?=1, homing?=0,
+//      hitPlayers?=true, hitNonPlayers?=false, tickInterval?=1, homing?=0, arc?,
 //      onStart?, onTick?, onHit?, onEnd?, particleOptions? (color, size, lifetime... for `particle`) }
 import { normalize, rotateYaw } from "../../core/vec.js";
 import { particleVars, particleOptionErrors } from "../shared/particle_vars.js";
@@ -39,6 +41,7 @@ export default {
       if (o[k] !== undefined && (typeof o[k] !== "number" || o[k] <= 0)) errors.push(`\`${k}\` must be > 0`);
     }
     if (o.homing !== undefined && (typeof o.homing !== "number" || o.homing < 0 || o.homing > 1)) errors.push("`homing` must be 0–1");
+    if (o.arc !== undefined && (typeof o.arc !== "number" || o.arc <= 0)) errors.push("`arc` must be > 0 (blocks)");
     for (const k of ["gravity", "inertia", "startY", "startForward", "startSide", "targetY"]) {
       if (o[k] !== undefined && typeof o[k] !== "number") errors.push(`\`${k}\` must be a number`);
     }
@@ -102,7 +105,10 @@ function launch(ctx, target, o, originTarget) {
       this.speed = v;
     },
   };
-  const maxTicks = o.maxTicks ?? 200;
+  // Lobbed shot: a fixed flight time from the ground distance and the climb.
+  const arcFrom = { ...start };
+  const arcTicks = o.arc ? Math.max(4, Math.ceil((Math.hypot(goal.x - start.x, goal.z - start.z) + 2 * o.arc) / speed)) : 0;
+  const maxTicks = o.arc ? arcTicks : (o.maxTicks ?? 200);
   const pvars = o.particleOptions ? particleVars(o.particleOptions) : undefined;
   const tickInterval = o.tickInterval ?? 1;
   const hit = new Set();
@@ -151,11 +157,24 @@ function launch(ctx, target, o, originTarget) {
       const mixed = normalize({ x: p.vel.x / sp * (1 - k) + want.x * k, y: p.vel.y / sp * (1 - k) + want.y * k, z: p.vel.z / sp * (1 - k) + want.z * k });
       p.vel = { x: mixed.x * sp, y: mixed.y * sp, z: mixed.z * sp };
     }
-    pos.x += p.vel.x;
-    pos.y += p.vel.y;
-    pos.z += p.vel.z;
-    p.vel.y -= p.gravity;
-    if (p.inertia !== 1) p.vel = { x: p.vel.x * p.inertia, y: p.vel.y * p.inertia, z: p.vel.z * p.inertia };
+    if (o.arc) {
+      const u = (p.ticks + 1) / arcTicks;
+      const next = {
+        x: arcFrom.x + (goal.x - arcFrom.x) * u,
+        y: arcFrom.y + (goal.y - arcFrom.y) * u + 4 * o.arc * u * (1 - u),
+        z: arcFrom.z + (goal.z - arcFrom.z) * u,
+      };
+      p.vel = { x: next.x - pos.x, y: next.y - pos.y, z: next.z - pos.z };
+      pos.x = next.x;
+      pos.y = next.y;
+      pos.z = next.z;
+    } else {
+      pos.x += p.vel.x;
+      pos.y += p.vel.y;
+      pos.z += p.vel.z;
+      p.vel.y -= p.gravity;
+      if (p.inertia !== 1) p.vel = { x: p.vel.x * p.inertia, y: p.vel.y * p.inertia, z: p.vel.z * p.inertia };
+    }
     if (o.hugSurface) pos.y = a.surfaceY(dim, pos) + 0.1;
     p.travelled += Math.hypot(p.vel.x, p.vel.y, p.vel.z);
     p.ticks++;
@@ -178,7 +197,7 @@ function launch(ctx, target, o, originTarget) {
       if (o.stopAtEntity !== false) return end();
     }
     if (o.stopAtBlock !== false && !o.hugSurface && a.isSolidAt(dim, pos)) return end();
-    if (p.travelled >= p.range || p.ticks >= maxTicks) return end();
+    if ((!o.arc && p.travelled >= p.range) || p.ticks >= maxTicks) return end();
     scheduler.after(1, step, token);
   };
   step();

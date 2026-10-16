@@ -297,6 +297,14 @@ export default {
         { m: "stopSound", o: { sound: "mob.zombie.say" } },
       ],
     },
+    // Archivist-style pieces: an OR condition, a lobbed (mortar) shot that lands on the target,
+    // pushing players out of the boss's body, and a volley of effect entities.
+    demo_or: { if: [{ any: ["healthPct<0", "onGround"] }], m: "sound", o: { sound: "random.orb" } },
+    demo_mortar: { m: "projectile", o: { speed: 0.5, arc: 6, particle: "bhm:glow", hitPlayers: false, onEnd: "demo_mortar_end" }, t: "@TargetLocation" },
+    demo_mortar_end: { m: "sound", o: { sound: "random.explode" } },
+    demo_push: { m: "skill", o: { skill: "demo_push_out" }, t: "@PlayersInRadius{r=24}" },
+    demo_push_out: { targetIf: ["boundingBoxesOverlap{w=1;h=2}"], m: "throw", o: { velocity: 5, velocityY: -1 } },
+    demo_volley: { m: "summon", o: { type: "bhm_demo:marker", amount: 20, radius: 6 } },
     // Only melee hits make it bleed (damageCause).
     bleed: {
       tr: "onDamaged",

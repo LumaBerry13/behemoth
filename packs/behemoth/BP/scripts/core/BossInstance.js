@@ -68,6 +68,8 @@ export class BossInstance {
     this.threat = new ThreatTable();
     /** @type {Set<string>} ids of summoned entities */
     this.summons = new Set();
+    /** @type {Set<string>} ids of summoned effect entities (config effect: own caps) */
+    this.effectSummons = new Set();
     /** @type {Set<string>} summons removed when this boss dies, despawns or resets (summon{bind}) */
     this.boundSummons = new Set();
     /** While true the boss does not turn toward its target (MythicMobs lockmodel). */

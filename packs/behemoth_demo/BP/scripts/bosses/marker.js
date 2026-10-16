@@ -1,13 +1,15 @@
 // Demo effect entity (kind "minion"): what a boss summons as a telegraph,
 // ground effect or slash (MythicMobs armor-stand FX mobs). No AI; it turns the
 // way its boss faces (@Parent), flashes a tint, hurts players standing on it
-// after 20 ticks and removes itself after 40. Never listed in the menu.
+// after 20 ticks and removes itself after 40. Never listed in the menu. effect: true gives
+// its summons their own, higher caps (volleys of telegraphs).
 
 /** @type {import("../../../../behemoth/BP/scripts/types/config").BossConfig} */
 export default {
   schemaVersion: 1,
   id: "bhm_demo:marker",
   kind: "minion",
+  effect: true,
   display: { name: "§7Marker" },
   ai: { default: "frozen", faceTarget: false },
   threat: { enabled: false },

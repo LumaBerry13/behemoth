@@ -10,7 +10,7 @@ import { parseTargeter, parseCondition, parseTrigger, hasPlaceholder, sampleValu
 
 /**
  * @typedef {{ kind: "castInstead" | "orElseCast", skill: string }} ConditionAction
- * @typedef {{ fn: Function, action?: undefined } | { module: import("../types/config").Condition, name: string, negate: boolean, args: import("../types/config").ConditionArgs, action?: ConditionAction }} CompiledCondition
+ * @typedef {{ fn: Function, action?: undefined } | { any: CompiledCondition[], action?: undefined } | { module: import("../types/config").Condition, name: string, negate: boolean, args: import("../types/config").ConditionArgs, action?: ConditionAction }} CompiledCondition
  * @typedef {{ module: import("../types/config").Targeter, name: string, options: Record<string, any> }} CompiledTargeter
  * @typedef {{
  *   mechanic: import("../types/config").Mechanic | null,
@@ -274,8 +274,19 @@ export class Validator {
         out.push({ fn: spec });
         continue;
       }
+      if (spec && typeof spec === "object" && "any" in spec) {
+        // OR group (MythicMobs `a || b`): passes if one of its conditions passes.
+        if (!Array.isArray(spec.any) || spec.any.length < 2) {
+          errors.push(`${at}\`any\` needs a list of at least two conditions`);
+          continue;
+        }
+        const any = this.compileConditions(spec.any, errors, `${at}any: `, config);
+        if (any.some((c) => c.action)) errors.push(`${at}any: castInstead / orElseCast are not allowed inside \`any\``);
+        out.push({ any });
+        continue;
+      }
       if (typeof spec !== "string") {
-        errors.push(`${at}condition must be a string or function`);
+        errors.push(`${at}condition must be a string, { any: [...] } or function`);
         continue;
       }
       const parsed = parseCondition(spec);

@@ -255,6 +255,22 @@ def effect_mob_files(mob_id: str, identifier: str) -> dict:
             "textures": {str(png): f"textures/entity/{slug}.png"}, "link_all_animations": True}
 
 
+def _textures(d: Path, folder: Path, found: dict, problems: list[str]) -> dict[str, str]:
+    """The client entity's textures: folder png → RP path."""
+    client = _load_json(found["client_entity"])
+    textures = {}
+    for path in (client["minecraft:client_entity"]["description"].get("textures") or {}).values():
+        stem = Path(path).name
+        png = next((p for p in found["pngs"] if p.stem == stem), None)
+        if png is None and len(found["pngs"]) == 1:
+            png = found["pngs"][0]
+        if png is None:
+            problems.append(f"{d.name}/: texture '{path}' — put {stem}.png in the folder")
+            continue
+        textures[str(png.relative_to(folder)).replace("\\", "/")] = f"{path}.png"
+    return textures
+
+
 def build_job(folder: Path) -> tuple[dict, Callable[[dict], None], list[str]]:
     """Returns the job, a function that saves the pack identity into behemoth.json, and problems
     that stop the conversion (empty list = fine)."""
@@ -269,11 +285,29 @@ def build_job(folder: Path) -> tuple[dict, Callable[[dict], None], list[str]]:
     mob_settings: dict = {str(k).lower(): v for k, v in (settings.get("mobs") or {}).items()}
 
     specs = []
+    # behemoth.json "bullets": {"<bulletModel>": "<FOLDER>"} — a folder with a projectile's model.
+    bullet_folders = {str(v).lower(): str(k) for k, v in (settings.get("bullets") or {}).items() if ":" not in str(v)}
+    bullet_specs = []
+    rel = lambda p: str(p.relative_to(folder)).replace("\\", "/")  # noqa: E731
     for d in sorted(p for p in folder.iterdir() if p.is_dir() and p.name.lower() not in SKIP_DIRS):
         found = scan_entity(d)
         if not found["geometry"] and not found["client_entity"]:
             continue  # not a mob folder
         mob = lower.get(d.name.lower())
+        if not mob and d.name.lower() in bullet_folders:
+            before = len(problems)
+            for key in ("client_entity", "geometry"):
+                if not found[key]:
+                    problems.append(f"{d.name}/ (bullet): no {key.replace('_', ' ')} file found")
+            if len(problems) > before:
+                continue
+            textures = _textures(d, folder, found, problems)
+            bullet_specs.append({
+                "folder": d.name, "key": bullet_folders[d.name.lower()],
+                **({"behavior": rel(found["behavior"])} if found["behavior"] else {}),
+                "client_entity": rel(found["client_entity"]), "geometry": rel(found["geometry"]),
+                "animations": [rel(a) for a in found["animations"]], "textures": textures})
+            continue
         if not mob:
             problems.append(f"folder '{d.name}' does not match a MythicMobs mob id (mobs in the YAML: {', '.join(sorted(mobs)) or 'none'})")
             continue
@@ -285,19 +319,8 @@ def build_job(folder: Path) -> tuple[dict, Callable[[dict], None], list[str]]:
             problems.append(f"{d.name}/: no animation file found")
         if len(problems) > before:
             continue
-        client = _load_json(found["client_entity"])
-        textures = {}
-        for path in (client["minecraft:client_entity"]["description"].get("textures") or {}).values():
-            stem = Path(path).name
-            png = next((p for p in found["pngs"] if p.stem == stem), None)
-            if png is None and len(found["pngs"]) == 1:
-                png = found["pngs"][0]
-            if png is None:
-                problems.append(f"{d.name}/: texture '{path}' — put {stem}.png in the folder")
-                continue
-            textures[str(png.relative_to(folder)).replace("\\", "/")] = f"{path}.png"
+        textures = _textures(d, folder, found, problems)
         ms = mob_settings.get(mob.lower(), {})
-        rel = lambda p: str(p.relative_to(folder)).replace("\\", "/")  # noqa: E731
         specs.append({
             "boss": _slug(d.name), "mob": mob, "auto": True, "link_all_animations": True,
             "behavior": rel(found["behavior"]), "client_entity": rel(found["client_entity"]),
@@ -307,6 +330,9 @@ def build_job(folder: Path) -> tuple[dict, Callable[[dict], None], list[str]]:
             **{k: ms[k] for k in ("identifier", "bone_aliases", "blades", "always_animate", "tuning", "bossbar_layout",
                                 "collision_box") if k in ms},
         })
+    for name, key in bullet_folders.items():
+        if not any(b["folder"].lower() == name for b in bullet_specs):
+            problems.append(f"behemoth.json bullets '{key}': no folder '{name}' with the bullet's Bedrock files")
     if not specs and not problems:
         problems.append("no mob folders found (a folder named after a MythicMobs mob id, holding its Bedrock files)")
     if problems:
@@ -355,6 +381,12 @@ def build_job(folder: Path) -> tuple[dict, Callable[[dict], None], list[str]]:
     }
     if "tuning" in main:
         job["tuning"] = {**job.get("tuning", {}), **main["tuning"]}
+    if bullet_specs:
+        job["bullets"] = dict(job.get("bullets") or {})
+        for b in bullet_specs:
+            b["identifier"] = f"{namespace}:{_slug(b['folder'])}"
+            job["bullets"][b["key"]] = b["identifier"]
+        job["bullet_entities"] = bullet_specs
 
     def save(j: dict) -> None:
         mob_settings_raw = {str(k).lower(): v or {} for k, v in (raw_settings.get("mobs") or {}).items()}

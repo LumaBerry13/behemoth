@@ -200,6 +200,7 @@ import entityType from "../modules/conditions/entity_type.js";
 import hasEffect from "../modules/conditions/has_effect.js";
 import damageCause from "../modules/conditions/damage_cause.js";
 import onBlock from "../modules/conditions/on_block.js";
+import boundingBoxesOverlap from "../modules/conditions/bounding_boxes_overlap.js";
 
 import onSpawn from "../modules/triggers/on_spawn.js";
 import onTimer from "../modules/triggers/on_timer.js";
@@ -346,6 +347,7 @@ export function bindModules(sm) {
   sm.bindCondition("hasEffect", hasEffect);
   sm.bindCondition("damageCause", damageCause);
   sm.bindCondition("onBlock", onBlock);
+  sm.bindCondition("boundingBoxesOverlap", boundingBoxesOverlap);
 
   sm.bindTrigger("onSpawn", onSpawn);
   sm.bindTrigger("onTimer", onTimer);

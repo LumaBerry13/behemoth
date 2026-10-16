@@ -33,7 +33,8 @@ export type AiMode = "idle" | "chase" | "frozen";
 export type TargeterSpec = string | ({ name: string } & Record<string, unknown>);
 
 /** "name", "!name", "name<=4", "name{k=v}", or an inline custom condition. */
-export type ConditionSpec = string | ((ctx: SkillContext, target: Entity | Location) => boolean);
+/** A condition string, an OR group `{ any: [...] }` (passes if one passes), or a function (tests only). */
+export type ConditionSpec = string | { any: ConditionSpec[] } | ((ctx: SkillContext, target: Entity | Location) => boolean);
 
 /** "onTimer:100", "~onDamaged", ... */
 export type TriggerSpec = string;
@@ -139,6 +140,11 @@ export interface BossConfig {
   parts?: string[];
   /** Starts (and resets to) invulnerable: every hit is cancelled (MythicMobs Invincible; effect entities). */
   invulnerable?: boolean;
+  /**
+   * Short-lived effect entity (telegraph, ground crack, slash): summons of it count against their own,
+   * higher caps (summon `cap` default 64 per boss, 192 in all) instead of the normal 8 / 64.
+   */
+  effect?: boolean;
   /** Keep this entity on Peaceful difficulty (default false: removed, D6). */
   allowPeaceful?: boolean;
   /** Where drops go (D7): "chest" (default) = a loot chest where the boss died, protected from explosions; "ground" = item entities. */

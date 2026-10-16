@@ -923,6 +923,36 @@ console.log("\n33. partVisibility, grab, damageCause, onAttack from a cancelled 
     check("…and the lock stays", d.boss.facingLocked === true);
     check("stopSound runs /stopsound for nearby players", mc.log.slice(s7).some(([, k, x]) => k === "command" && x.endsWith("stopsound @s mob.zombie.say")));
     d.boss.facingLocked = false;
+
+    // Archivist-style pieces.
+    let s8 = mc.log.length;
+    d.run("demo_or", 1, { force: false });
+    check("an OR group passes when one of its conditions does", mc.log.slice(s8).some(([, k, x]) => k === "sound" && x.startsWith("random.orb")));
+
+    const e0 = d.e.location;
+    d.player.location = { x: e0.x + 8, y: e0.y, z: e0.z };
+    s8 = mc.log.length;
+    d.run("demo_mortar", 40);
+    const pts = mc.log.slice(s8).filter(([, k, x]) => k === "particle" && x.startsWith("bhm:glow"))
+      .map(([, , x]) => x.match(/\(([-\d.]+), ([-\d.]+), ([-\d.]+)\)/).slice(1).map(Number));
+    const last = pts[pts.length - 1] ?? [0, 0, 0];
+    check("a lobbed shot climbs (arc)", pts.some((q) => q[1] >= e0.y + 1.5 + 5), `max y ${Math.max(...pts.map((q) => q[1]))}`);
+    check("…and lands on the target point", Math.hypot(last[0] - d.player.location.x, last[2] - d.player.location.z) < 0.05 && Math.abs(last[1] - d.player.location.y) < 0.05, `${last}`);
+    check("…then runs onEnd", mc.log.slice(s8).some(([, k, x]) => k === "sound" && x.startsWith("random.explode")));
+
+    s8 = mc.log.length;
+    d.player.location = { x: e0.x + 0.3, y: e0.y, z: e0.z };
+    d.run("demo_push", 1);
+    check("boundingBoxesOverlap: a player inside the boss is pushed", mc.log.slice(s8).some(([, k, x]) => (k === "impulse" || k === "knockback") && x.startsWith("minecraft:player")));
+    s8 = mc.log.length;
+    d.player.location = { x: e0.x + 4, y: e0.y, z: e0.z };
+    d.run("demo_push", 1);
+    check("…one outside it is not", !mc.log.slice(s8).some(([, k, x]) => (k === "impulse" || k === "knockback") && x.startsWith("minecraft:player")));
+
+    const normalBefore = d.boss.summons.size;
+    d.run("demo_volley", 1);
+    check("effect entities have their own cap (20 of 20 spawned, not 8)", d.boss.effectSummons.size >= 20, `${d.boss.effectSummons.size}`);
+    check("…and do not count against normal summons", d.boss.summons.size === normalBefore);
   }
 }
 

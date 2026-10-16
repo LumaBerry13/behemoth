@@ -156,3 +156,11 @@ ks_puddle:
   - delay 4
   - teleportY{y=-15}
   - damagepercent{percent=1} @self
+
+# --- Archivist-style entity attacks: OR conditions, a lobbed (mortar) projectile with a bullet model ---
+ks_archive:
+  Conditions:
+  - ( onground || incombat )
+  - ( moving && onground ) false
+  Skills:
+  - projectile{v=40;g=0.8;tyo=64;sdir=@self;bulletModel=11400;oE=[ - summon{m=kitchen_puddle} ]} @RandomLocationsNearCaster{a=4;r=10}

@@ -76,7 +76,16 @@ private/Wendigo/report.md              what was converted, approximated or skipp
   convert). `summon{t=ZOMBIE}` and other vanilla mobs work as they are.
 - **Invisible effect mobs need no folder.** A summoned mob with `Options: Invisible: true` (or of type
   `ARMOR_STAND`/`MARKER`) and no folder, such as a damage puddle or a telegraph marker, gets a generated
-  invisible entity (empty model) that runs its skills in place. It is listed under Info.
+  invisible entity (empty model) that runs its skills in place. It is listed under Info. If such a mob
+  has a ModelEngine model of its own (a telegraph decal, a slash), give it a folder like any other mob
+  to see the model; the report reminds you under "Needs you".
+- **Effect entities** (NoAI or invisible minions: telegraphs, ground cracks, slashes) have their own
+  summon limits (64 per boss, 192 in all), so a volley of them never blocks real minions.
+- **Projectile models** (`projectile{bulletModel=11400}`): convert the model to a Bedrock entity
+  (client entity, geometry, texture, animations optional; no behavior file needed), put it in a folder,
+  and name the folder in `behemoth.json`: `"bullets": { "11400": "BOOK_MISSILE" }`. The converter makes
+  it a flying model (no AI, no gravity, cannot be hurt; looping animations always play). Without it the
+  projectile is drawn with particles.
 - **Two mobs with one model:** give each its own folder with the same files, and give the second one
   another entity id in `behemoth.json` (`"mobs": { "MOB_2": { "identifier": "pack:mob_2" } }`).
 - Mobs from another pack's YAML (mixed packs) work the same way: only folders are converted.

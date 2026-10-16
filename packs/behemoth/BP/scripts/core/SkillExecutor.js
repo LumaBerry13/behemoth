@@ -313,6 +313,7 @@ export class SkillExecutor {
       let ok;
       try {
         if ("fn" in c) ok = !!c.fn(ctx, target);
+        else if ("any" in c) ok = c.any.some((sub) => this.checkConditions(ctx, [sub], target));
         else {
           ok = !!c.module.test(ctx, target, c.args);
           if (c.negate) ok = !ok;

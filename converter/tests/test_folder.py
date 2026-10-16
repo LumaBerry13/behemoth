@@ -27,12 +27,18 @@ def make_folder(base: Path) -> Path:
             shutil.copy(FIX / name, d / name)
         Image.new("RGBA", (16, 16), (255, 0, 0, 255)).save(d / "kitchen.png")
     Image.new("RGBA", (728, 80), (255, 255, 255, 128)).save(f / "kitchen_boss" / "bossbar.png")
+    book = f / "BOOK_MISSILE"                      # a projectile's model: client entity + geometry + texture
+    book.mkdir()
+    for name in ("entity.json", "geo.json", "animation.json"):
+        shutil.copy(FIX / name, book / name)
+    Image.new("RGBA", (16, 16), (0, 0, 255, 255)).save(book / "kitchen.png")
     (f / "sounds").mkdir()
     for n in ("roar_1.ogg", "roar_2.ogg", "growl.ogg"):
         (f / "sounds" / n).write_bytes(b"OggS")
     (f / "behemoth.json").write_text(json.dumps({"mobs": {
         "kitchen_spark": {"identifier": "kitchen:spark"},
-        "kitchen_boss": {"bossbar_layout": {"width": 182, "y": -2}}}}))
+        "kitchen_boss": {"bossbar_layout": {"width": 182, "y": -2}}},
+        "bullets": {"11400": "BOOK_MISSILE"}}))
     return f
 
 
@@ -168,3 +174,21 @@ def test_invisible_effect_mob_without_folder_is_generated(folder):
     assert 'type: "test:kitchen_puddle"' in boss                                     # the summon maps to it
     report = (folder / "report.md").read_text(encoding="utf-8")
     assert "generated an invisible effect entity" in report and "kitchen_puddle' skipped" not in report
+
+
+def test_bullet_model_folder(folder):
+    bp, rp = folder / "pack" / "BP", folder / "pack" / "RP"
+    ent = json.loads((bp / "entities" / "book_missile.json").read_text(encoding="utf-8"))["minecraft:entity"]
+    assert ent["description"]["identifier"] == "test:book_missile"
+    assert ent["components"]["minecraft:physics"] == {"has_gravity": False, "has_collision": False}
+    assert not any(k.startswith("minecraft:behavior.") for k in ent["components"])
+    client = json.loads((rp / "entity" / "book_missile.entity.json").read_text(encoding="utf-8"))
+    assert client["minecraft:client_entity"]["description"]["identifier"] == "test:book_missile"
+    boss = (bp / "scripts" / "bosses" / "kitchen_boss.js").read_text(encoding="utf-8")
+    assert 'bullet: "test:book_missile"' in boss
+    assert "book_missile" not in (bp / "scripts" / "bosses" / "index.js").read_text(encoding="utf-8")  # no config
+
+
+def test_effect_minions_are_flagged(folder):
+    cfg = (folder / "pack" / "BP" / "scripts" / "bosses" / "kitchen_puddle.js").read_text(encoding="utf-8")
+    assert "effect: true" in cfg

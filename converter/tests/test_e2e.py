@@ -100,6 +100,10 @@ def test_archivist_style_mappings(out):
     assert '"@Cone{angle=110.0;r=4.5;rotation=-20.0}"' in js
     assert "magic: -1" in js                                                 # POISON has no Bedrock cause
     assert '{ m: "look", o: {}, t: "@target" }' in js
+    # Archivist-style: OR groups, negated AND, lobbed shot, targeter conditions
+    assert 'if: [{ any: ["onGround", "inCombat"] }, { any: ["!moving", "!onGround"] }]' in js
+    assert "arc: 16," in js and "gravity" not in js.split("ks_archive:")[1].split("ks_bleed")[0]
+    assert 'targetIf: ["boundingBoxesOverlap{w=' in js and 't: "@EntitiesInRadius{r=24.0}"' in js
     assert 'm: "stopSound", o: { sound: "mythic.kitchen_hum" }, t: "@PlayersInRadius{r=40.0}"' in js
     assert 'drops: [{ item: "minecraft:diamond", amount: [1, 3], chance: 0.5 }, { item: "minecraft:emerald", amount: 2 }]' in js
     index = (out / "BP" / "scripts" / "bosses" / "index.js").read_text(encoding="utf-8")

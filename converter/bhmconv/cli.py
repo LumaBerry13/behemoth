@@ -272,6 +272,8 @@ def convert(job_path: Path | None = None, out: Path | None = None, *, job: dict 
 
     sounds = build_sounds(job, src, out, notes)
     built = [build_entity(spec, job, src, out, mobs, skills, mob_types, sounds) for spec in specs]
+    for b in job.get("bullet_entities", []):
+        notes.append(build_bullet(b, src, out))
     main = built[0]
     for b in built:
         notes += [f"[{b['boss']}] {n}" for n in b["notes"]] if len(built) > 1 else b["notes"]
@@ -493,6 +495,49 @@ def _animation_hooks(anim_file: dict, skills: dict, ctx: Context, notes: list[st
     return effects
 
 
+def build_bullet(spec: dict, src: Path, out: Path) -> str:
+    """A projectile's model (behemoth.json "bullets": {"<bulletModel>": "<FOLDER>"}): an entity the
+    framework moves every tick. No AI, no gravity, no collision, cannot be hurt; its looping
+    animations always play. Returns a report note."""
+    ident, slug = spec["identifier"], _ident(spec["folder"].lower())
+    beh = _load_json(src / spec["behavior"]) if spec.get("behavior") else {
+        "format_version": "1.21.0", "minecraft:entity": {"description": {}, "components": {}}}
+    ent = beh["minecraft:entity"]
+    ent["description"].update({"identifier": ident, "is_spawnable": False, "is_summonable": True})
+    comps = {k: v for k, v in (ent.get("components") or {}).items()
+             if not k.startswith(("minecraft:behavior.", "minecraft:navigation", "minecraft:movement", "minecraft:jump"))}
+    comps.update({
+        "minecraft:physics": {"has_gravity": False, "has_collision": False},
+        "minecraft:collision_box": {"width": 0.1, "height": 0.1},
+        "minecraft:pushable": {"is_pushable": False, "is_pushable_by_piston": False},
+        "minecraft:damage_sensor": {"triggers": [{"cause": "all", "deals_damage": False}]},
+        "minecraft:health": {"value": 1, "max": 1},
+        "minecraft:type_family": {"family": ["bhm_bullet", "inanimate"]},
+    })
+    ent["components"] = comps
+    ent.pop("component_groups", None)
+    ent.pop("events", None)
+    _write(out / "BP" / "entities" / f"{slug}.json", json.dumps(beh, indent=2))
+    client = _load_json(src / spec["client_entity"])
+    desc = client["minecraft:client_entity"]["description"]
+    desc["identifier"] = ident
+    anims = desc.setdefault("animations", {})
+    animate = desc.setdefault("scripts", {}).setdefault("animate", [])
+    for f in spec.get("animations", []):
+        data = _load_json(src / f)
+        for full, a in (data.get("animations") or {}).items():
+            key = full.rsplit(".", 1)[-1]
+            anims.setdefault(key, full)
+            if a.get("loop") and key not in animate:
+                animate.append(key)
+        _write(out / "RP" / "animations" / Path(f).name, json.dumps(data, indent=2))
+    _write(out / "RP" / "entity" / f"{slug}.entity.json", json.dumps(client, indent=2))
+    shutil.copyfile(src / spec["geometry"], _mk(out / "RP" / "models" / "entity" / Path(spec["geometry"]).name))
+    for f, dest in spec.get("textures", {}).items():
+        shutil.copyfile(src / f, _mk(out / "RP" / dest))
+    return f"bullet model {spec['folder']}/ → entity {ident} (projectile bulletModel {spec['key']})"
+
+
 def build_entity(spec: dict, job: dict, src: Path, out: Path, mobs: dict, skills: dict, mob_types: dict,
                  sounds: dict[str, str] | None = None) -> dict:
     """Convert one MythicMobs mob + its Bedrock entity files into config, generated data and entity files."""
@@ -543,6 +588,10 @@ def build_entity(spec: dict, job: dict, src: Path, out: Path, mobs: dict, skills
         mm_mobs=set(mobs),
     )
     ctx.always = set(always)
+    own_box = behavior["minecraft:entity"].get("components", {}).get("minecraft:collision_box") or {}
+    box = {**{"width": geometry_size(geo)[0], "height": geometry_size(geo)[1]}, **own_box,
+           **{k: v for k, v in (spec.get("collision_box") or {}).items() if v}}
+    ctx.collision = (float(box["width"]), float(box["height"]))
     ctx.base_states["idle"].append("idle") if "idle" in action_anims else None
     ctx.base_states["walk"].append("walk") if "walk" in action_anims else None
     tb = translate_boss(spec["mob"], mobs[spec["mob"]], skills, ctx)
@@ -630,6 +679,10 @@ def build_entity(spec: dict, job: dict, src: Path, out: Path, mobs: dict, skills
             notes.append("NoAI → ai.default frozen, faceTarget false (effect entity)")
         elif spec.get("effect"):
             notes.append("no model folder: generated an invisible effect entity (empty model); ai.default frozen")
+            model = re.search(r"model\{(?:[^}]*?;)?(?:mid|m|model)=([A-Za-z0-9_.-]+)", yaml.safe_dump(mobs[spec["mob"]].get("Skills") or []))
+            if model:
+                notes.append(f"it has the ModelEngine model '{model.group(1)}': put its Bedrock files in a folder named "
+                             f"{spec['mob']} to see it (it is invisible now) — put the model in")
     # Boss bar (framework HUD, L45): the HUD draws textures/behemoth/bossbars/<bar name>.png on every bar.
     # With a custom bossbar.png the bar name is a key (bhmbar_...) and the HUD hides the bar text; else
     # the bar shows the plain name (the game strips colour codes) and gets an empty image.
@@ -646,6 +699,8 @@ def build_entity(spec: dict, job: dict, src: Path, out: Path, mobs: dict, skills
                   **({"damageMultiplier": tuning["damage_multiplier"]} if "damage_multiplier" in tuning else {}),
                   **({"ignoreDifficulty": True} if tuning.get("ignore_difficulty") else {})},
         **({"invulnerable": True} if tb["invincible"] else {}),
+        # NoAI minions and generated invisible ones are effect entities (telegraphs, cracks): own summon caps.
+        **({"effect": True} if kind == "minion" and (tb["noAI"] or spec.get("effect")) else {}),
         **({"variables": tb["variables"]} if tb["variables"] else {}),
         **({"parts": ctx.parts} if ctx.parts else {}),
         "animations": Raw("anims"),

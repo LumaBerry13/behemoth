@@ -28,6 +28,8 @@ kitchen_boss:
   - skill{s=ks_greet} @trigger ~onCombat
   - skill{s=ks_resume} @self ~onLoad
   - skill{s=ks_mind} @target ~onTimer:20
+  - throw{v=5;vy=-1} @eir{r=24;conditions=[ - boundingboxesoverlap]} ~onTimer:1
+  - skill{s=ks_archive} @target ~onTimer:60
   - SudoSkill{s=ks_bleed} @trigger ~onDamaged
   - skill{s=ks_grab_bite} @target ~onTimer:30
   - skill{s=ks_steel} @self ~onTimer:40
