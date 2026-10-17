@@ -246,7 +246,8 @@ def effect_mob_files(mob_id: str, identifier: str) -> dict:
     files = {
         "behavior": {"format_version": "1.21.0", "minecraft:entity": {
             "description": {"identifier": identifier, "is_spawnable": False, "is_summonable": True},
-            "components": {"minecraft:collision_box": {"width": 0.5, "height": 0.5}}}},
+            "components": {"minecraft:collision_box": {"width": 0.5, "height": 0.5},
+                           "minecraft:custom_hit_test": {"hitboxes": [{"width": 0.01, "height": 0.01, "pivot": [0, 0, 0]}]}}}},
         "client_entity": {"format_version": "1.10.0", "minecraft:client_entity": {"description": {
             "identifier": identifier, "materials": {"default": "entity_alphatest"},
             "textures": {"default": f"textures/entity/{slug}"}, "geometry": {"default": f"geometry.{slug}"},

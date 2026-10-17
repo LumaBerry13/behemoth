@@ -93,3 +93,12 @@ def test_markers_get_a_tiny_collision_box():
     # a boss always stays hittable (Steel Raider: NoAI, Collidable false)
     assert collision_size({"Options": {"NoAI": True, "Collidable": False}}, geo, "boss")[0] == 2.0
     assert collision_size({}, geo)[0] == 2.0                                      # capped model size
+
+
+def test_marker_rests_on_blocks_but_cannot_be_hit():
+    from bhmconv.entity import MARKER_BOX, complete_behavior
+    mob = {"Type": "ARMOR_STAND", "Options": {"Marker": True, "NoAI": True}}
+    out = complete_behavior({"minecraft:entity": {"description": {"identifier": "fx:t"}, "components": {}}}, mob, MARKER_BOX, [])
+    comps = out["minecraft:entity"]["components"]
+    assert comps["minecraft:collision_box"] == {"width": 0.5, "height": 0.5}          # big enough for block collision
+    assert comps["minecraft:custom_hit_test"]["hitboxes"][0]["width"] < 0.05          # players cannot hit it

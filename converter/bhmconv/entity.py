@@ -352,8 +352,11 @@ def geometry_size(geo: dict) -> tuple[float, float]:
     return round(min(MAX_COLLISION_WIDTH, max(0.6, width)), 1), round(min(6.0, max(0.5, height)), 1)
 
 
-# MythicMobs Marker armor stands / Collidable: false (telegraphs, ground effects): nothing to bump into.
-MARKER_BOX = (0.2, 0.2)
+# MythicMobs Marker armor stands / Collidable: false (telegraphs, ground effects): a block-sized
+# collision box keeps them on the ground (a 0.2 box fell through blocks, owner 2026-10-17), and a
+# near-zero custom_hit_test means players cannot hit them; nothing pushes them or is pushed.
+MARKER_BOX = (0.5, 0.5)
+MARKER_HIT_TEST = {"hitboxes": [{"width": 0.01, "height": 0.01, "pivot": [0, 0, 0]}]}
 
 
 def collision_size(mob: dict, geo: dict, kind: str = "boss") -> tuple[float, float]:
@@ -390,7 +393,10 @@ def complete_behavior(behavior: dict, mob: dict, size: tuple[float, float], note
     add("minecraft:health", {"value": hp, "max": hp}, "MythicMobs Health")
     marker = is_marker(mob) and tuple(size) == MARKER_BOX
     add("minecraft:collision_box", {"width": size[0], "height": size[1]},
-        "MythicMobs Marker / Collidable false: nothing to bump into" if marker else "from the model size")
+        "MythicMobs Marker / Collidable false: rests on blocks" if marker else "from the model size")
+    if marker:
+        add("minecraft:custom_hit_test", MARKER_HIT_TEST, "MythicMobs Marker / Collidable false: players cannot hit it")
+        add("minecraft:pushable", {"is_pushable": False, "is_pushable_by_piston": False}, "an effect is not pushed")
     speed = float(opts.get("MovementSpeed", 0) or 0)
     add("minecraft:movement", {"value": speed if speed > 0 else 0.25}, "MythicMobs MovementSpeed" if speed > 0 else "default 0.25")
     add("minecraft:movement.basic", {}, "walking")

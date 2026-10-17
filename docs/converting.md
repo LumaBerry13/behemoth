@@ -117,8 +117,9 @@ private/Wendigo/report.md              what was converted, approximated or skipp
 - **Your own render controller:** put its `.render_controller.json` in the mob folder. It is copied
   into the pack, and the converter extends it with what the framework needs (colour tint, hiding
   model parts), so tints and part hiding work with custom controllers too.
-- MythicMobs `Marker: true` armor stands and non-collidable effect minions get a tiny hitbox, so
-  players do not bump into telegraphs. Bosses always keep a normal one.
+- MythicMobs `Marker: true` armor stands and non-collidable effect minions cannot be hit (a tiny
+  `custom_hit_test`) but keep a collision box (0.5 by default, `collision_box` changes it), so they
+  rest on the ground. Bosses always keep a normal hitbox.
 
 ## 5. Sounds
 
