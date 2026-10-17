@@ -311,6 +311,8 @@ export default {
     demo_layer_stop: { m: "state", o: { anim: "roar", stop: true } },
     demo_bones: { m: "particle", o: { particle: "bhm:spark" }, t: "@Bone{bone=head|rightArm}" },
     demo_unset_var: { m: "variableMath", o: { var: "caster.unsetcalc", eq: "x + <caster.var.never_set> + 2" } },
+    // MythicMobs "drop to the floor" (velocity y=-100): capped like Java, so nothing falls through the ground.
+    demo_floor_drop: { m: "velocity", o: { y: -100, clear: true }, t: "@self" },
     // Only melee hits make it bleed (damageCause).
     bleed: {
       tr: "onDamaged",

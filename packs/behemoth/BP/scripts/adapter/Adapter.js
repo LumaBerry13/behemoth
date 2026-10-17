@@ -59,6 +59,11 @@ function chestSpot(dim, p) {
   return q;
 }
 
+/** Largest impulse per axis (blocks/tick), like Java's velocity cap. */
+export const MAX_IMPULSE = 3.9;
+/** @param {number} n */
+const clampImpulse = (n) => Math.max(-MAX_IMPULSE, Math.min(MAX_IMPULSE, n));
+
 export const Adapter = {
   // -------------------------------------------------------------------------
   // System
@@ -653,6 +658,10 @@ export const Adapter = {
    */
   push(e, v) {
     if (!e.isValid) return;
+    // Java caps entity velocity at 3.9 blocks/tick per axis, and MythicMobs packs rely on it
+    // (velocity{y=-100} = "drop to the floor"). Uncapped, such an impulse sends a small effect
+    // entity through the ground.
+    v = { x: clampImpulse(v.x), y: clampImpulse(v.y), z: clampImpulse(v.z) };
     if (e instanceof Player) {
       e.applyKnockback({ x: v.x, z: v.z }, v.y);
     } else {

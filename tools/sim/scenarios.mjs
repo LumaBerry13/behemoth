@@ -973,6 +973,10 @@ console.log("\n33. partVisibility, grab, damageCause, onAttack from a cancelled 
     delete d.boss.vars.unsetcalc;
     d.run("demo_unset_var", 1);
     check("a variable that was never set reads as 0 in placeholders", d.boss.vars.unsetcalc === 2, `${d.boss.vars.unsetcalc}`);
+    s9 = mc.log.length;
+    d.run("demo_floor_drop", 1);
+    const drop = mc.log.slice(s9).find(([, k, x]) => k === "impulse" && x.startsWith("bhm_demo:test_boss"));
+    check("huge impulses are capped at 3.9 blocks/tick (no falling through the ground)", !!drop && drop[2].includes("-3.9"), drop?.[2]);
   }
 }
 
