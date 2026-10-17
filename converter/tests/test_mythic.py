@@ -188,3 +188,38 @@ def test_display_colour_codes():
     # &5 → §5 (a broken replacement once wrote "§\x01" and broke the boss bar image and death messages)
     out = translate_boss("m", {"Display": "&5Steel &lRaider", "Skills": []}, {}, ctx())
     assert out["display"] == "§5Steel §lRaider"
+
+
+def test_state_layers_stop_and_partial_modelparts():
+    c = ctx(anims={"strafe", "use_book"}, bones={"candle_1", "candle_2", "candles", "body"})
+    c.looping = {"strafe"}
+    layer = translate_line(parse_skill_line("state{s=strafe;p=5;l=HOLD} @self"), c, "x")
+    assert layer["o"] == {"anim": "strafe", "layer": 5}
+    action = translate_line(parse_skill_line("state{s=use_book;p=5} @self"), c, "x")
+    assert action["o"] == {"anim": "use_book"}                                     # not looping → action
+    stop = translate_line(parse_skill_line("state{r=true;s=strafe;p=5} @self"), c, "x")
+    assert stop["o"] == {"anim": "strafe", "stop": True}
+    many = translate_line(parse_skill_line("sound{s=a} @modelpart{pid=candle_;em=false}"), c, "x")
+    assert many["t"] == "@Bone{bone=candle_1|candle_2}"
+
+
+def test_undefined_skills_are_reported_and_skipped():
+    c = ctx()
+    c.skill_names = {"real"}
+    assert translate_line(parse_skill_line("skill{s=ghost}"), c, "x") is None
+    assert "not defined in the YAML" in c.notes[-1]
+    rs = translate_line(parse_skill_line("randomskill{s=real,ghost}"), c, "x")
+    assert rs["o"]["skills"] == ["real"]
+
+
+def test_animation_keyframe_skills_are_scheduled():
+    c = ctx(anims={"summon"})
+    c.anim_hooks = {"summon": [(20, "spawn_minion"), (25, "spawn_minion")]}
+    c.hook_skills = {"spawn_minion"}
+    skills = {"cast": {"Skills": ["state{s=summon} @self"]},
+              "spawn_minion": {"Skills": ["summon{t=ZOMBIE} @self"]}}
+    out = translate_boss("m", {"Skills": ["skill{s=cast} @self ~onTimer:40"]}, skills, c)
+    lines = out["skills"]["cast"]["c"]
+    assert lines[0]["m"] == "state"
+    assert lines[1] == {"m": "skill", "o": {"skill": "spawn_minion"}, "t": "@self", "delay": 20}
+    assert lines[2]["delay"] == 25 and "spawn_minion" in out["skills"]                # reachable via the hook

@@ -62,6 +62,7 @@ as BP/ and RP/ overlays that `npm run deploy` copies over the public packs.
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import re
 import shutil
@@ -150,7 +151,7 @@ def place_boss_bar(source: Path, dest: Path, layout: dict) -> list[str]:
 
 from .bake import Skeleton, bake_animation, rest_position
 from .entity import (
-    MAX_COLLISION_WIDTH,
+    MAX_COLLISION_WIDTH, collision_size, plan_render_controller,
     add_scripted_death, build_base_controller, build_render_controller, complete_behavior, death_duration_ticks,
     find_death_event, geometry_size, movement_speed, patch_behavior, patch_client_entity, render_controller_id,
 )
@@ -218,7 +219,7 @@ def _manifests(pack: dict, display: str) -> tuple[dict, dict]:
 
 ENTITY_KEYS = ("behavior", "client_entity", "geometry", "animations", "animation_controllers", "textures",
                "bone_aliases", "blades", "identifier", "auto", "bossbar", "bossbar_layout", "link_all_animations",
-               "always_animate", "collision_box")
+               "always_animate", "collision_box", "render_controllers", "texture_fps")
 
 
 def _entity_specs(job: dict) -> list[dict]:
@@ -334,7 +335,7 @@ def convert(job_path: Path | None = None, out: Path | None = None, *, job: dict 
 
 
 NEEDS = ("unsupported", "has no mapping", "not in the bedrock geometry", "skipped (not converted", "could not be read",
-         "not supported", "no matching animation", "was not found", "put ", "will be silent", "does not match", "is cut off")
+         "not supported", "no matching animation", "was not found", "put ", "will be silent", "not defined in the yaml", "does not match", "is cut off")
 APPROX = ("[verify]", "approximat", "dropped", "capped", "→ grab", "mirrored", "÷", "folded", "cannot", "only the bar title",
           "drawn as", "skipped `")
 
@@ -384,6 +385,9 @@ def build_sounds(job: dict, src: Path, out: Path, notes: list[str]) -> dict[str,
     used_last = {re.split(r"[.:]", u)[-1].lower() for u in used}
     for f in sorted(folder.glob("*.ogg")):
         stem = f.stem if f.stem.lower() in used_last else re.sub(r"_\d+$", "", f.stem)
+        bare = re.sub(r"_?\d+$", "", f.stem)
+        if stem.lower() not in used_last and bare.lower() in used_last:
+            stem = bare  # foley1.ogg … foley5.ogg are variants of a YAML sound "foley"
         groups.setdefault(stem, []).append(f)
     defs, mapping = {}, {}
     # A Java resource pack's sounds.json in the folder says exactly which files make each sound
@@ -396,11 +400,12 @@ def build_sounds(job: dict, src: Path, out: Path, notes: list[str]) -> dict[str,
                 continue
             for f in files:
                 shutil.copyfile(f, _mk(out / "RP" / dest / f.name))
-            defs[event] = {"category": "hostile", "max_distance": 48.0,
-                           "sounds": [{"name": f"{dest}/{f.stem}", "load_on_low_memory": True} for f in files]}
-            mapping[event] = event
+            name = _sound_event(event, ns_)
+            defs[name] = {"category": "hostile", "max_distance": 48.0,
+                          "sounds": [{"name": f"{dest}/{f.stem}", "load_on_low_memory": True} for f in files]}
+            mapping[event] = mapping[name] = name
             if ns_:
-                mapping[f"{ns_}:{event}"] = event
+                mapping[f"{ns_}:{event}"] = name
             for f in files:
                 for stem in list(groups):
                     groups[stem] = [g for g in groups[stem] if g != f]
@@ -411,9 +416,11 @@ def build_sounds(job: dict, src: Path, out: Path, notes: list[str]) -> dict[str,
         event = f"{prefix}.{stem}"
         mm_ids = [u for u in used if re.split(r"[.:]", u)[-1].lower() == stem.lower()]
         if mm_ids:
-            event = mm_ids[0].split(":", 1)[-1]
+            first = mm_ids[0]
+            event = _sound_event(first.split(":", 1)[-1], first.split(":", 1)[0] if ":" in first else "")
             for u in mm_ids:
                 mapping[u] = event
+                mapping[u.split(":", 1)[-1]] = event
         for f in files:
             shutil.copyfile(f, _mk(out / "RP" / dest / f.name))
         defs[event] = {"category": "hostile", "max_distance": 48.0,
@@ -426,6 +433,14 @@ def build_sounds(job: dict, src: Path, out: Path, notes: list[str]) -> dict[str,
     notes.append(f"sounds: {len({s['name'] for d in defs.values() for s in d['sounds']})} files → {len(defs)} events "
                  f"({', '.join(sorted(defs))})")
     return mapping
+
+
+def _sound_event(event: str, namespace: str) -> str:
+    """Bedrock sound event names are global across packs: a bare name ("hurt") gets the MythicMobs
+    namespace ("littleroom_thearchivist.hurt"); dotted names ("sr.spawn") stay as they are."""
+    if "." in event or not namespace or namespace == "minecraft":
+        return event
+    return f"{namespace}.{event}"
 
 
 def _java_sound_events(src: Path) -> list[tuple[str, str, list[str]]]:
@@ -448,9 +463,30 @@ def _java_sound_events(src: Path) -> list[tuple[str, str, list[str]]]:
         for event, spec in data.items():
             if not isinstance(spec, dict) or not isinstance(spec.get("sounds"), list):
                 continue
-            stems = [Path(x if isinstance(x, str) else str(x.get("name", ""))).name.lower() for x in spec["sounds"]]
-            found.append((ns, str(event), [x for x in stems if x]))
+            names = [x if isinstance(x, str) else str(x.get("name", "")) for x in spec["sounds"]]
+            # "littleroom_thearchivist:candle_step1" → namespace + file stem
+            spaces = [n.split(":", 1)[0] for n in names if ":" in n]
+            stems = [Path(n.split(":", 1)[-1]).name.lower() for n in names]
+            found.append((ns or (spaces[0] if spaces else ""), str(event), [x for x in stems if x]))
     return found
+
+
+def script_hooks(anim_files: list[dict], skills: dict) -> dict[str, list[tuple[int, str]]]:
+    """ModelEngine keyframe scripts (timeline "mm:SKILL;") that do more than play a sound:
+    full animation id → [(tick, skill)]. The converter runs them from the skills playing it."""
+    hooks: dict[str, list[tuple[int, str]]] = {}
+    for f in anim_files:
+        for anim_id, anim in (f.get("animations") or {}).items():
+            for time, value in (anim.get("timeline") or {}).items() if isinstance(anim.get("timeline"), dict) else []:
+                for entry in value if isinstance(value, list) else [value]:
+                    for part in (x.strip() for x in str(entry).split(";")):
+                        if not part.lower().startswith("mm:"):
+                            continue
+                        name = part[3:].strip()
+                        lines = [parse_skill_line(str(r)) for r in (skills.get(name) or {}).get("Skills") or []]
+                        if name in skills and not (lines and all(sl.mechanic.lower() == "sound" for sl in lines)):
+                            hooks.setdefault(anim_id, []).append((round(float(time) * 20), name))
+    return hooks
 
 
 def _animation_hooks(anim_file: dict, skills: dict, ctx: Context, notes: list[str], tag: str) -> dict[str, str]:
@@ -480,8 +516,11 @@ def _animation_hooks(anim_file: dict, skills: dict, ctx: Context, notes: list[st
                         key = name.lower()
                         effects[key] = event
                         anim.setdefault("sound_effects", {})[time] = {"effect": key}
+                    elif name in ctx.hook_skills:
+                        notes.append(f"{tag}: {anim_id} keyframe script mm:{name} at {time}s runs from the skills that "
+                                     f"play the animation (server side, timed from when they start it)")
                     else:
-                        notes.append(f"{tag}: {anim_id} keyframe script mm:{name} at {time}s dropped (only sound-only skills can run from an animation)")
+                        notes.append(f"{tag}: {anim_id} keyframe script mm:{name} at {time}s dropped (the skill is not defined)")
                 if rest:
                     kept.append("; ".join(rest) + ";")
             if kept:
@@ -588,8 +627,13 @@ def build_entity(spec: dict, job: dict, src: Path, out: Path, mobs: dict, skills
         mm_mobs=set(mobs),
     )
     ctx.always = set(always)
+    ctx.looping = {k for k, v in action_anims.items() if all_anims.get(v, {}).get("loop") is True}
+    by_full = script_hooks(anim_files, skills)
+    ctx.anim_hooks = {k: sorted(by_full[v]) for k, v in action_anims.items() if v in by_full}
+    ctx.hook_skills = {name for hooks in ctx.anim_hooks.values() for _, name in hooks}
     own_box = behavior["minecraft:entity"].get("components", {}).get("minecraft:collision_box") or {}
-    box = {**{"width": geometry_size(geo)[0], "height": geometry_size(geo)[1]}, **own_box,
+    auto_box = collision_size(mobs[spec["mob"]], geo, kind)
+    box = {**{"width": auto_box[0], "height": auto_box[1]}, **own_box,
            **{k: v for k, v in (spec.get("collision_box") or {}).items() if v}}
     ctx.collision = (float(box["width"]), float(box["height"]))
     ctx.base_states["idle"].append("idle") if "idle" in action_anims else None
@@ -621,7 +665,7 @@ def build_entity(spec: dict, job: dict, src: Path, out: Path, mobs: dict, skills
         ident = _ident(key_name)
         bones_js = ",\n".join(f"    {json.dumps(b)}: {track_compact(t)}" for b, t in res.tracks.items())
         _write(gen_dir / f"{ident}.js",
-               f"// GENERATED by bhmconv {__version__} from {anim_names} — do not edit.\n"
+               f"// GENERATED by bhmconv {__version__} from {[Path(f).name for f in anim_names]} — do not edit.\n"
                f"// Bone tracks are compact (base64 int16, decoded by the framework).\n"
                f"export default {{\n"
                f"  name: {json.dumps(full)},\n"
@@ -644,8 +688,11 @@ def build_entity(spec: dict, job: dict, src: Path, out: Path, mobs: dict, skills
 
     # ---------------- config ----------------
     if spec.get("auto"):
-        behavior = complete_behavior(behavior, mobs[spec["mob"]], geometry_size(geo), notes)
-    box = {k: v for k, v in (spec.get("collision_box") or {}).items() if k in ("width", "height") and v}
+        behavior = complete_behavior(behavior, mobs[spec["mob"]], collision_size(mobs[spec["mob"]], geo, kind), notes)
+        if not find_death_event(behavior) and "death" in action_anims:
+            length = float(all_anims[action_anims["death"]].get("animation_length", 2) or 2)
+            behavior = add_scripted_death(behavior, max(2.0, length + 1.5), notes)
+    box ={k: v for k, v in (spec.get("collision_box") or {}).items() if k in ("width", "height") and v}
     if box:
         comps = behavior["minecraft:entity"].setdefault("components", {})
         comps["minecraft:collision_box"] = {**comps.get("minecraft:collision_box", {"width": 0.6, "height": 1.8}), **box}
@@ -654,9 +701,6 @@ def build_entity(spec: dict, job: dict, src: Path, out: Path, mobs: dict, skills
     if width > MAX_COLLISION_WIDTH:
         notes.append(f"collision box {width} wide: Bedrock mobs wider than {MAX_COLLISION_WIDTH} may not walk "
                      f"(walk animation, no movement); set mobs.{spec['mob']}.collision_box.width in behemoth.json [VERIFY]")
-        if not find_death_event(behavior) and "death" in action_anims:
-            length = float(all_anims[action_anims["death"]].get("animation_length", 2) or 2)
-            behavior = add_scripted_death(behavior, max(2.0, length + 1.5), notes)
     death_event = find_death_event(behavior)
     death_cfg = None
     if death_event:
@@ -731,12 +775,20 @@ def build_entity(spec: dict, job: dict, src: Path, out: Path, mobs: dict, skills
     for f, data in zip(anim_names, anim_files):
         sound_effects.update(_animation_hooks(data, skills, ctx, notes, Path(f).name))
         _write(rp / "animations" / Path(f).name, json.dumps(data, indent=2))
+    # Render controllers from the mob folder are copied; the entity's own one is extended (tint, hidden
+    # parts) or, with the default one, generated (plus animated texture frames: name1..nameN).
+    custom_rcs: dict[str, dict] = {}
+    for f in spec.get("render_controllers", []):
+        data = _load_json(src / f)
+        custom_rcs.update(data.get("render_controllers") or {})
+        _write(rp / "render_controllers" / Path(f).name, json.dumps(data, indent=2))
+    client = copy.deepcopy(client)
+    rc_file = plan_render_controller(client, boss, notes, ctx.uses_tint, ctx.parts, custom_rcs, spec.get("texture_fps"))
+    if rc_file:
+        _write(rp / "render_controllers" / f"{boss}.bhm.render_controllers.json", json.dumps(rc_file, indent=2))
     _write(rp / "entity" / f"{boss}.entity.json",
            json.dumps(patch_client_entity(client, boss, notes, identifier=ident_override, tint=ctx.uses_tint,
                                           parts=ctx.parts, always=always, sound_effects=sound_effects), indent=2))
-    if ctx.uses_tint or ctx.parts:
-        _write(rp / "render_controllers" / f"{boss}.bhm.render_controllers.json",
-               json.dumps(build_render_controller(boss, ctx.uses_tint, ctx.parts), indent=2))
     _write(rp / "animation_controllers" / f"{boss}.bhm_base.animation_controller.json",
            json.dumps(build_base_controller(boss, idle, walk), indent=2))
     shutil.copyfile(src / spec["geometry"], _mk(rp / "models" / "entity" / Path(spec["geometry"]).name))

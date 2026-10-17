@@ -192,3 +192,49 @@ def test_bullet_model_folder(folder):
 def test_effect_minions_are_flagged(folder):
     cfg = (folder / "pack" / "BP" / "scripts" / "bosses" / "kitchen_puddle.js").read_text(encoding="utf-8")
     assert "effect: true" in cfg
+
+
+def test_folder_named_after_the_modelengine_model(tmp_path):
+    # Folders may carry the ModelEngine model's name instead of the mob id (case and _ ignored).
+    f = make_folder(tmp_path)
+    mobs = (f / "mobs.yml").read_text(encoding="utf-8")
+    mobs = mobs.replace("  - matchrotation @parent ~onSpawn\n",
+                        "  - model{m=kitchen_sparkle;scale=1} @self ~onSpawn\n  - matchrotation @parent ~onSpawn\n")
+    (f / "mobs.yml").write_text(mobs, encoding="utf-8")
+    (f / "kitchen_spark").rename(f / "KITCHEN_SPARKLE")
+    assert main([str(f)]) == 0
+    spark = (f / "pack" / "BP" / "scripts" / "bosses" / "kitchen_sparkle.js").read_text(encoding="utf-8")
+    assert "mob 'kitchen_spark'" in spark and 'id: "kitchen:spark"' in spark
+
+
+def test_sound_variants_without_underscore_and_namespaced_sounds_json(tmp_path):
+    f = make_folder(tmp_path)
+    skills = (f / "skills.yml").read_text(encoding="utf-8")
+    (f / "skills.yml").write_text(skills + "\nks_noise:\n  Skills:\n  - sound{s=kitchen_ns:clatter} @self\n"
+                                  "  - sound{s=kitchen_ns:bellow} @self\n", encoding="utf-8")
+    mobs = (f / "mobs.yml").read_text(encoding="utf-8")
+    (f / "mobs.yml").write_text(mobs.replace("  - skill{s=ks_mind} @target ~onTimer:20\n",
+                                             "  - skill{s=ks_mind} @target ~onTimer:20\n  - skill{s=ks_noise} @self ~onTimer:80\n"),
+                                encoding="utf-8")
+    for n in ("clatter1.ogg", "clatter2.ogg", "low_moo.ogg"):
+        (f / "sounds" / n).write_bytes(b"OggS")
+    (f / "kitchen_boss" / "sounds.json").write_text(json.dumps({"bellow": {"sounds": ["kitchen_ns:low_moo"]}}))
+    assert main([str(f)]) == 0
+    defs = json.loads((f / "pack" / "RP" / "sounds" / "sound_definitions.json").read_text(encoding="utf-8"))["sound_definitions"]
+    assert len(defs["kitchen_ns.clatter"]["sounds"]) == 2                        # clatter1 + clatter2, namespaced
+    assert defs["kitchen_ns.bellow"]["sounds"][0]["name"].endswith("/low_moo")   # from sounds.json
+    boss = (f / "pack" / "BP" / "scripts" / "bosses" / "kitchen_boss.js").read_text(encoding="utf-8")
+    assert 'sound: "kitchen_ns.clatter"' in boss and 'sound: "kitchen_ns.bellow"' in boss
+
+
+def test_death_animation_gets_a_scripted_death(tmp_path):
+    # Regression: a mob with a `death` animation keeps its body while it plays (scripted death).
+    f = make_folder(tmp_path)
+    anim = json.loads((f / "kitchen_boss" / "animation.json").read_text(encoding="utf-8"))
+    anim["animations"]["animation.kitchen.death"] = {"animation_length": 2.0, "bones": {}}
+    (f / "kitchen_boss" / "animation.json").write_text(json.dumps(anim), encoding="utf-8")
+    assert main([str(f)]) == 0
+    ent = json.loads((f / "pack" / "BP" / "entities" / "kitchen_boss.json").read_text(encoding="utf-8"))["minecraft:entity"]
+    assert "bhm:start_death" in ent["events"]
+    cfg = (f / "pack" / "BP" / "scripts" / "bosses" / "kitchen_boss.js").read_text(encoding="utf-8")
+    assert 'death: { event: "bhm:start_death"' in cfg

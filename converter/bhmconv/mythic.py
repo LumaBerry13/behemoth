@@ -282,6 +282,10 @@ class Context:
     particles: dict[str, str] = field(default_factory=dict)  # job overrides for MM particle names
     bullets: dict[str, str] = field(default_factory=dict)  # job: projectile bullet model/material → entity id
     items: dict[str, str] = field(default_factory=dict)  # job: MythicMobs item name → Bedrock item id (dropitem)
+    anim_hooks: dict[str, list[tuple[int, str]]] = field(default_factory=dict)  # animation key → [(tick, skill)]
+    hook_skills: set[str] = field(default_factory=set)  # skills run from animation keyframes
+    looping: set[str] = field(default_factory=set)  # animation keys that loop
+    skill_names: set[str] = field(default_factory=set)  # metaskills defined in the YAML
     collision: tuple[float, float] | None = None  # the mob's collision box (width, height), for boundingboxesoverlap
     base_damage: float = 1.0  # the mob's Damage (basedamage multiplies it)
     notes: list[str] = field(default_factory=list)
@@ -562,9 +566,17 @@ def translate_targeter(t: tuple[str, dict[str, Any]] | None, ctx: Context, where
     if name == "modelpart":
         pid = str(_opt(o, "pid", "partid", "p", "part", default=""))
         bone = resolve_bone(ctx, pid, where)
-        if _opt(o, "em", "exactmatch") is False:
-            ctx.note(where, f"@modelpart pid '{pid}' with em=false (all parts starting with it) uses only the "
-                            f"part named exactly '{bone}' (map it with bone_aliases) [partial]")
+        if _opt(o, "em", "exactmatch") is False and pid and pid not in ctx.bone_aliases:
+            # em=false: every part whose name starts with pid (one target each).
+            many = sorted(b for b in ctx.bones if b.lower().startswith(pid.lower()) and not b.endswith("_tip"))
+            if len(many) > 1:
+                off = {"x": -float(_opt(o, "x", default=0)), "y": float(_opt(o, "y", default=0)),
+                       "z": -float(_opt(o, "z", default=0))}
+                ctx.used_bones.update(many)
+                ctx.note(where, f"@modelpart '{pid}' (em=false) → {len(many)} parts: {', '.join(many)}")
+                return f"@Bone{_fmt_opts({'bone': '|'.join(many), **{k: v for k, v in off.items() if v != 0}})}"
+            if many:
+                bone = many[0]
         if str(o.get("o", o.get("offset", "model"))).lower() not in ("model", "local"):
             ctx.note(where, f"@modelpart offset mode '{o.get('o', o.get('offset'))}' treated as model (yaw) frame")
         # ModelEngine model frame: -Z forward, +X right → entity space: +Z forward, +X left.
@@ -894,9 +906,19 @@ def translate_line(sl: SkillLine, ctx: Context, where: str) -> dict[str, Any] | 
     if n == "delay":
         line = {"m": "delay", "o": {"ticks": _ticks(_opt(o, "ticks", "t", default=1))}}
     elif n in ("skill", "metaskill", "meta", "$"):
-        line = {"m": "skill", "o": {"skill": _skill_ref(_opt(o, "s", "skill", "$", "meta", "m"), ctx, where, "skill")}}
+        ref = _skill_ref(_opt(o, "s", "skill", "$", "meta", "m"), ctx, where, "skill")
+        if ctx.skill_names and ref not in ctx.skill_names and ref not in ctx.extra_skills:
+            ctx.note(where, f"skill '{ref}' is not defined in the YAML (the pack does not include it); line skipped")
+            return None
+        line = {"m": "skill", "o": {"skill": ref}}
     elif n == "randomskill":
         skills = [s.strip() for s in str(_opt(o, "s", "skills", "m", default="")).split(",") if s.strip()]
+        missing = [x for x in skills if ctx.skill_names and x not in ctx.skill_names]
+        if missing:
+            ctx.note(where, f"randomskill: {', '.join(missing)} not defined in the YAML; left out")
+            skills = [x for x in skills if x not in missing]
+            if not skills:
+                return None
         line = {"m": "randomSkill", "o": {"skills": skills}}
     elif n == "gcd":
         line = {"m": "gcd", "o": {"ticks": _ticks(_opt(o, "ticks", "t", default=20))}}
@@ -909,16 +931,22 @@ def translate_line(sl: SkillLine, ctx: Context, where: str) -> dict[str, Any] | 
         line = {"m": "setSpeed", "o": {"multiplier": float(_opt(o, "s", "speed", default=1))}}
     elif n == "state":
         anim = str(_opt(o, "s", "state", default=""))
-        if _opt(o, "r", "remove") is True:
-            ctx.note(where, f"state remove '{anim}' dropped (animations end on their own)")
-            return None
+        remove = _opt(o, "r", "remove") is True
         if anim in ctx.always:
             ctx.note(where, f"state '{anim}' is an always-on layer (job always_animate); played by the RP instead")
             return None
         if anim not in ctx.anims:
-            ctx.note(where, f"state '{anim}' has no matching animation; line dropped")
+            what = "state remove" if remove else "state"
+            ctx.note(where, f"{what} '{anim}' has no matching animation; line dropped")
             return None
-        line = {"m": "state", "o": {"anim": anim}}
+        if remove:
+            line = {"m": "state", "o": {"anim": anim, "stop": True}}
+        else:
+            line = {"m": "state", "o": {"anim": anim}}
+            prio = _opt(o, "p", "priority")
+            if prio is not None and int(float(prio)) > 1 and anim in ctx.looping:
+                # A looping state with a priority is a ModelEngine layer (strafe legs, passive sway).
+                line["o"]["layer"] = int(float(prio))
     elif n == "defaultstate":
         typ = str(_opt(o, "t", "type", default="idle")).lower()
         anim = str(_opt(o, "s", "state", default=""))
@@ -1350,6 +1378,33 @@ TRIGGER_MAP = {"onspawn": "onSpawn", "ontimer": "onTimer", "ondamaged": "onDamag
                "onchangetarget": "onChangeTarget", "onplayerkill": "onKillPlayer", "onkillplayer": "onKillPlayer"}
 
 
+def _schedule_hooks(out_skills: dict[str, Any], ctx: Context) -> None:
+    """Animation keyframe scripts (mm:SKILL at t seconds): every `state` line that plays the
+    animation is followed by delayed `skill` lines, so the skill runs t seconds after it starts."""
+    def expand(lines: list[dict]) -> list[dict]:
+        out = []
+        for line in lines:
+            out.append(line)
+            o = line.get("o") or {}
+            if line.get("m") == "state" and not o.get("stop"):
+                base = int(line.get("delay", 0))
+                for ticks, skill in ctx.anim_hooks.get(o.get("anim", ""), []):
+                    out.append({"m": "skill", "o": {"skill": skill}, "t": "@self",
+                                **({"delay": base + ticks} if base + ticks else {})})
+            if isinstance(line.get("c"), list):
+                line["c"] = expand(line["c"])
+        return out
+
+    for name, sk in out_skills.items():
+        if "c" in sk:
+            sk["c"] = expand(sk["c"])
+        elif sk.get("m") == "state" and (sk.get("o") or {}).get("anim") in ctx.anim_hooks:
+            body = {k: v for k, v in sk.items() if k in ("m", "o", "t", "delay")}
+            rest = {k: v for k, v in sk.items() if k not in body}
+            out_skills[name] = {**rest, "c": expand([body])}
+    ctx.used_mechanics.add("skill")
+
+
 def _mob_variables(mob: dict, ctx: Context, where: str) -> dict[str, Any]:
     """MythicMobs `Variables: {name: "float/0"}` → initial values."""
     out: dict[str, Any] = {}
@@ -1385,6 +1440,7 @@ def _grab_durations(name: str, raw_lines: list, ctx: Context) -> None:
 def translate_boss(mob_id: str, mob: dict, skills: dict[str, dict], ctx: Context) -> dict[str, Any]:
     """Returns the config pieces: skills, damageModifiers, display, stats, ai, threat, variables."""
     out_skills: dict[str, Any] = {}
+    ctx.skill_names = set(skills)
     ctx.base_damage = float(mob.get("Damage", ctx.base_damage) or ctx.base_damage)
     mob_lines = [parse_skill_line(str(s)) for s in (mob.get("Skills") or [])]
 
@@ -1420,7 +1476,8 @@ def translate_boss(mob_id: str, mob: dict, skills: dict[str, dict], ctx: Context
         out_skills[key] = sk
 
     # Reachable metaskills.
-    for name in reachable_skills(mob_lines, skills):
+    roots = mob_lines + [parse_skill_line(f"skill{{s={n}}}") for n in sorted(ctx.hook_skills)]
+    for name in reachable_skills(roots, skills):
         spec = skills[name] or {}
         where = name
         _grab_durations(name, spec.get("Skills") or [], ctx)
@@ -1450,6 +1507,8 @@ def translate_boss(mob_id: str, mob: dict, skills: dict[str, dict], ctx: Context
 
     for name, sk in ctx.extra_skills.items():
         out_skills.setdefault(name, sk)
+    if ctx.anim_hooks:
+        _schedule_hooks(out_skills, ctx)
 
     mods: dict[str, float] = {}
     for raw in mob.get("DamageModifiers") or []:

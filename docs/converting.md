@@ -35,12 +35,13 @@ the behavior file, the client entity file, the geometry, the animations and the 
 private/Wendigo/
 ├── wendigo.yml                 MythicMobs files: mobs and skills, any names, any number
 ├── wendigo_skills.yml
-├── WENDIGO/                    one folder per mob to convert, named EXACTLY like its MythicMobs id
+├── WENDIGO/                    one folder per mob: named like its MythicMobs id or its ModelEngine model
 │   ├── wendigo.behavior.json   behavior entity (a bare Blockbench export is fine)
 │   ├── wendigo.entity.json     client entity, with its animations listed
 │   ├── wendigo.geo.json        geometry
 │   ├── wendigo.animation.json  animations (several files are fine)
-│   ├── wendigo.png             texture (file name = the last part of the client entity's texture path)
+│   ├── wendigo.png             texture(s) (file name = the last part of the client entity's texture path)
+│   ├── *.render_controller.json optional: the entity's own render controller(s)
 │   ├── bossbar.png             optional custom boss bar art, with the name (section 6)
 │   └── sounds.json             optional: the Java pack's sounds.json (section 5)
 ├── sounds/                     optional .ogg files (section 5)
@@ -105,11 +106,27 @@ private/Wendigo/report.md              what was converted, approximated or skipp
 - Sounds, particles (coloured dust, block particles), model-part hiding, grabs, recoil, placeholders,
   variables and the rest of the MythicMobs vocabulary the framework supports.
 
+### Folder names, textures and render controllers
+
+- A mob folder is named after the MythicMobs mob id (`the_archivist_AOE`) **or** after the ModelEngine
+  model the mob uses (`model{m=thearchivist_groundexplosion}` → `THE_ARCHIVIST_GROUND_EXPLOSION`).
+  Upper/lower case and `_` do not matter.
+- **Animated textures** (one image per frame): give the client entity textures named `<name>1`,
+  `<name>2`, … and no `default`. The converter adds a render controller that cycles them, 10 frames per
+  second (`behemoth.json` `mobs.<MOB>.texture_fps` changes it).
+- **Your own render controller:** put its `.render_controller.json` in the mob folder. It is copied
+  into the pack, and the converter extends it with what the framework needs (colour tint, hiding
+  model parts), so tints and part hiding work with custom controllers too.
+- MythicMobs `Marker: true` armor stands and non-collidable effect minions get a tiny hitbox, so
+  players do not bump into telegraphs. Bosses always keep a normal one.
+
 ## 5. Sounds
 
 Put the `.ogg` files in `sounds/`. Name each file after the **last part** of the MythicMobs sound id:
 `sound{s=littleroom_wendigo:littleroom.wendigo.growl}` → `growl.ogg`. Variants of one sound end in
-`_1`, `_2`, … (`growl_1.ogg`, `growl_2.ogg`); one is picked at random each time.
+`_1`, `_2`, … (`growl_1.ogg`, `growl_2.ogg`) or just a number (`growl1.ogg`); one is picked at
+random each time. Sound ids without a dot (`littleroom_thearchivist:hurt`) become
+`littleroom_thearchivist.hurt` in the pack, so two boss packs never share a sound name.
 
 Sounds the YAML does not use still get packaged as `<pack id>.<name>`.
 

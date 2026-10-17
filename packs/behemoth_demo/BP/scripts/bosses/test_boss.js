@@ -305,6 +305,12 @@ export default {
     demo_push: { m: "skill", o: { skill: "demo_push_out" }, t: "@PlayersInRadius{r=24}" },
     demo_push_out: { targetIf: ["boundingBoxesOverlap{w=1;h=2}"], m: "throw", o: { velocity: 5, velocityY: -1 } },
     demo_volley: { m: "summon", o: { type: "bhm_demo:marker", amount: 20, radius: 6 } },
+    // ModelEngine-style layers: an animation on its own layer on top of the action one, stopped later;
+    // effects at several bones at once (em=false); a variable read before it was ever set (= 0).
+    demo_layer: { m: "state", o: { anim: "roar", layer: 3 } },
+    demo_layer_stop: { m: "state", o: { anim: "roar", stop: true } },
+    demo_bones: { m: "particle", o: { particle: "bhm:spark" }, t: "@Bone{bone=head|rightArm}" },
+    demo_unset_var: { m: "variableMath", o: { var: "caster.unsetcalc", eq: "x + <caster.var.never_set> + 2" } },
     // Only melee hits make it bleed (damageCause).
     bleed: {
       tr: "onDamaged",

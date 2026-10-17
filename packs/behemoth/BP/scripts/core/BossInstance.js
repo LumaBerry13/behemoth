@@ -97,6 +97,8 @@ export class BossInstance {
     /** @type {{ key: string, data: AnimationData, startTick: number, seq: number } | null} */
     this.anim = null;
     this.animSeq = 0;
+    /** @type {Map<string, string>} layer controller (bhm_layer_<n>) → animation key playing on it */
+    this.layers = new Map();
 
     /** Per-tick target cache. */
     this.targetCacheTick = -1;
@@ -375,6 +377,7 @@ export class BossInstance {
     this.stunPrev = undefined;
     this.hiddenParts = 0;
     this.applyParts();
+    this.stopLayers();
     this.pendingLoot = []; // the fight starts over: dropped equipment is back on the model
     this.updateHealthScale(true);
     this.gcdUntil = 0;
@@ -474,6 +477,14 @@ export class BossInstance {
       Log.warn(`${this.config.id}: unknown animation "${key}"`);
       return 0;
     }
+    const controller = opts.controller ?? "bhm_action";
+    if (controller !== "bhm_action") {
+      // A layer (MythicMobs state with a priority, e.g. a looping strafe): plays on top of the
+      // action animation; no markers / animEnd, and hit tracks keep following the action.
+      this.layers.set(controller, key);
+      Adapter.playAnimation(this.entity, data.name, { controller, blendOutTime: opts.blendOutTime });
+      return data.length;
+    }
     const scheduler = this.services.scheduler;
     const seq = ++this.animSeq;
     this.anim = { key, data, startTick: scheduler.tick, seq };
@@ -498,6 +509,44 @@ export class BossInstance {
       }, this.token);
     }
     return data.length;
+  }
+
+  /**
+   * Stop an animation wherever it plays (MythicMobs `state{r=true}`): a layer, or the current
+   * action animation. Replays it with a stop expression that is true at once [VERIFY in-game].
+   * @param {string} key @param {number} [blendOutTime] seconds
+   * @returns {boolean} whether it was playing
+   */
+  stopAnim(key, blendOutTime) {
+    const data = this.config.animations?.[key];
+    if (!data) return false;
+    let stopped = false;
+    for (const [controller, k] of this.layers) {
+      if (k !== key) continue;
+      Adapter.playAnimation(this.entity, data.name, { controller, stopExpression: "1", blendOutTime });
+      this.layers.delete(controller);
+      stopped = true;
+    }
+    if (this.anim?.key === key) {
+      Adapter.playAnimation(this.entity, data.name, { controller: "bhm_action", stopExpression: "1", blendOutTime });
+      this.anim = null;
+      this.animSeq++;
+      stopped = true;
+    }
+    return stopped;
+  }
+
+  /** Play the layer animations again after a load (they do not survive a reload on the client). */
+  replayLayers() {
+    for (const [controller, key] of this.layers) {
+      const data = this.config.animations?.[key];
+      if (data) Adapter.playAnimation(this.entity, data.name, { controller });
+    }
+  }
+
+  /** Stop every layer animation (reset, death). */
+  stopLayers() {
+    for (const key of new Set(this.layers.values())) this.stopAnim(key, 0.2);
   }
 
   /** Ticks since the current animation started, or -1. */

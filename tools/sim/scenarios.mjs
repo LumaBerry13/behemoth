@@ -953,6 +953,26 @@ console.log("\n33. partVisibility, grab, damageCause, onAttack from a cancelled 
     d.run("demo_volley", 1);
     check("effect entities have their own cap (20 of 20 spawned, not 8)", d.boss.effectSummons.size >= 20, `${d.boss.effectSummons.size}`);
     check("…and do not count against normal summons", d.boss.summons.size === normalBefore);
+
+    // Archivist edge cases: animation layers, several bones, unset variables.
+    let s9 = mc.log.length;
+    d.run("demo_layer", 1);
+    check("a state with a layer plays on its own controller", mc.log.slice(s9).some(([, k, x]) => k === "anim" && x.endsWith("(bhm_layer_3)")));
+    check("…and is remembered", d.boss.layers.get("bhm_layer_3") === "roar");
+    services.bosses.save(d.boss);
+    check("…saved with the boss", JSON.parse(d.e.dyn["bhm:state"]).layers?.bhm_layer_3 === "roar");
+    s9 = mc.log.length;
+    d.boss.replayLayers();
+    check("…replayed after a load", mc.log.slice(s9).some(([, k, x]) => k === "anim" && x.endsWith("(bhm_layer_3)")));
+    s9 = mc.log.length;
+    d.run("demo_layer_stop", 1);
+    check("state stop ends the layer", mc.log.slice(s9).some(([, k, x]) => k === "anim" && x.endsWith("(bhm_layer_3) stop")) && !d.boss.layers.size);
+    s9 = mc.log.length;
+    d.run("demo_bones", 1);
+    check("@Bone with several bones targets each of them", mc.log.slice(s9).filter(([, k, x]) => k === "particle" && x.startsWith("bhm:spark")).length === 2);
+    delete d.boss.vars.unsetcalc;
+    d.run("demo_unset_var", 1);
+    check("a variable that was never set reads as 0 in placeholders", d.boss.vars.unsetcalc === 2, `${d.boss.vars.unsetcalc}`);
   }
 }
 

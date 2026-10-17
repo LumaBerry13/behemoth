@@ -31,6 +31,10 @@ def _load_json(p: Path) -> Any:
     return json.loads(text)
 
 
+def _norm(s: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", s.lower())
+
+
 def _slug(s: str) -> str:
     return re.sub(r"[^a-z0-9_]+", "_", s.lower()).strip("_") or "boss"
 
@@ -58,7 +62,7 @@ def read_yaml(folder: Path) -> tuple[dict, dict, str, list[str]]:
 def scan_entity(folder: Path) -> dict:
     """Classify a mob folder's files by content."""
     found: dict[str, Any] = {"behavior": None, "client_entity": None, "geometry": None, "animations": [],
-                             "animation_controllers": [], "pngs": [], "bossbar": None}
+                             "animation_controllers": [], "render_controllers": [], "pngs": [], "bossbar": None}
     for f in sorted(folder.rglob("*")):
         if not f.is_file():
             continue
@@ -82,6 +86,8 @@ def scan_entity(folder: Path) -> dict:
             found["client_entity"] = f
         elif "minecraft:geometry" in data:
             found["geometry"] = f
+        elif "render_controllers" in data:
+            found["render_controllers"].append(f)
         elif "animation_controllers" in data:
             found["animation_controllers"].append(f)
         elif "animations" in data:
@@ -142,6 +148,8 @@ def with_template(settings: dict, defaults: dict[str, dict], boss: str) -> dict:
             for mob, mob_defaults in defaults.items():
                 have = next((k for k in value if k.lower() == mob.lower()), mob)
                 entry = {**_copy(MOB_TEMPLATE), **(value.get(have) or {})}
+                if "texture_fps" in mob_defaults and entry.get("texture_fps") is None:
+                    entry["texture_fps"] = mob_defaults["texture_fps"]
                 keys = ["collision_box"] + (["bossbar_layout"] if mob == boss else [])
                 for k in keys:
                     base = {**(_copy(BOSSBAR_TEMPLATE) if k == "bossbar_layout" else {}), **(entry.get(k) or {})}
@@ -158,14 +166,20 @@ def with_template(settings: dict, defaults: dict[str, dict], boss: str) -> dict:
 
 def entity_defaults(folder: Path, spec: dict, layout: dict | None) -> dict:
     """What an unset collision_box / bossbar_layout currently means for this mob (shown in behemoth.json)."""
-    from .entity import geometry_size  # noqa: PLC0415
+    from .entity import collision_size  # noqa: PLC0415
 
     beh = _load_json(Path(folder) / spec["behavior"])
     box = (beh.get("minecraft:entity", {}).get("components") or {}).get("minecraft:collision_box")
     if not box:
-        w, h = geometry_size(_load_json(Path(folder) / spec["geometry"]))
+        w, h = collision_size(spec.get("mob_data") or {}, _load_json(Path(folder) / spec["geometry"]), spec.get("kind", "boss"))
         box = {"width": w, "height": h}
     out: dict = {"collision_box": {"width": box.get("width"), "height": box.get("height")}}
+    from .entity import DEFAULT_TEXTURE_FPS, texture_frames  # noqa: PLC0415
+
+    client = _load_json(Path(folder) / spec["client_entity"])
+    rcs = client["minecraft:client_entity"]["description"].get("render_controllers") or ["controller.render.default"]
+    if rcs == ["controller.render.default"] and texture_frames(client):
+        out["texture_fps"] = DEFAULT_TEXTURE_FPS
     if spec.get("bossbar"):
         from PIL import Image  # noqa: PLC0415 (converter/requirements.txt)
 
@@ -191,9 +205,9 @@ def check_settings(settings: dict) -> list[str]:
             problems.append(f"behemoth.json: '{key}' is inside 'pack' but belongs {where}")
     for mob, ms in (settings.get("mobs") or {}).items():
         for key in ms or {}:
-            if key not in MOB_TEMPLATE and key != "bossbar_layout":
+            if key not in MOB_TEMPLATE and key not in ("bossbar_layout", "texture_fps"):
                 problems.append(f"behemoth.json: mobs.{mob} has an unknown entry '{key}' "
-                                f"(entries: {', '.join([*MOB_TEMPLATE, 'bossbar_layout'])})")
+                                f"(entries: {', '.join([*MOB_TEMPLATE, 'bossbar_layout', 'texture_fps'])})")
     for key in settings.get("tuning") or {}:
         if key not in TUNING_TEMPLATE:
             problems.append(f"behemoth.json: tuning has an unknown entry '{key}' (entries: {', '.join(TUNING_TEMPLATE)})")
@@ -284,6 +298,15 @@ def build_job(folder: Path) -> tuple[dict, Callable[[dict], None], list[str]]:
     lower = {m.lower(): m for m in mobs}
     mob_settings: dict = {str(k).lower(): v for k, v in (settings.get("mobs") or {}).items()}
 
+    # A mob folder is named after the MythicMobs mob id or after its ModelEngine model
+    # (model{m=thearchivist_groundexplosion} → THE_ARCHIVIST_GROUND_EXPLOSION); case and _ do not matter.
+    by_name: dict[str, str] = {}
+    for mob_id, mob in mobs.items():
+        for model in re.findall(r"model\{(?:[^}]*?;)?(?:mid|m|model)=([A-Za-z0-9_.-]+)", yaml.safe_dump(mob.get("Skills") or [])):
+            by_name.setdefault(_norm(model), mob_id)
+    for mob_id in mobs:
+        by_name[_norm(mob_id)] = mob_id
+    taken: dict[str, str] = {}
     specs = []
     # behemoth.json "bullets": {"<bulletModel>": "<FOLDER>"} — a folder with a projectile's model.
     bullet_folders = {str(v).lower(): str(k) for k, v in (settings.get("bullets") or {}).items() if ":" not in str(v)}
@@ -293,7 +316,12 @@ def build_job(folder: Path) -> tuple[dict, Callable[[dict], None], list[str]]:
         found = scan_entity(d)
         if not found["geometry"] and not found["client_entity"]:
             continue  # not a mob folder
-        mob = lower.get(d.name.lower())
+        mob = lower.get(d.name.lower()) or by_name.get(_norm(d.name))
+        if mob and mob in taken:
+            problems.append(f"folders '{taken[mob]}' and '{d.name}' are both for the MythicMobs mob '{mob}'")
+            continue
+        if mob:
+            taken[mob] = d.name
         if not mob and d.name.lower() in bullet_folders:
             before = len(problems)
             for key in ("client_entity", "geometry"):
@@ -309,7 +337,8 @@ def build_job(folder: Path) -> tuple[dict, Callable[[dict], None], list[str]]:
                 "animations": [rel(a) for a in found["animations"]], "textures": textures})
             continue
         if not mob:
-            problems.append(f"folder '{d.name}' does not match a MythicMobs mob id (mobs in the YAML: {', '.join(sorted(mobs)) or 'none'})")
+            problems.append(f"folder '{d.name}' does not match a MythicMobs mob id or ModelEngine model "
+                            f"(mobs in the YAML: {', '.join(sorted(mobs)) or 'none'})")
             continue
         before = len(problems)
         for key in ("behavior", "client_entity", "geometry"):
@@ -326,9 +355,10 @@ def build_job(folder: Path) -> tuple[dict, Callable[[dict], None], list[str]]:
             "behavior": rel(found["behavior"]), "client_entity": rel(found["client_entity"]),
             "geometry": rel(found["geometry"]), "animations": [rel(a) for a in found["animations"]],
             "animation_controllers": [rel(a) for a in found["animation_controllers"]], "textures": textures,
+            "render_controllers": [rel(r) for r in found["render_controllers"]],
             **({"bossbar": rel(found["bossbar"])} if found["bossbar"] else {}),
             **{k: ms[k] for k in ("identifier", "bone_aliases", "blades", "always_animate", "tuning", "bossbar_layout",
-                                "collision_box") if k in ms},
+                                "collision_box", "texture_fps") if k in ms},
         })
     for name, key in bullet_folders.items():
         if not any(b["folder"].lower() == name for b in bullet_specs):
@@ -390,7 +420,7 @@ def build_job(folder: Path) -> tuple[dict, Callable[[dict], None], list[str]]:
 
     def save(j: dict) -> None:
         mob_settings_raw = {str(k).lower(): v or {} for k, v in (raw_settings.get("mobs") or {}).items()}
-        defaults = {sp["mob"]: entity_defaults(folder, sp, _drop_empty(mob_settings_raw.get(sp["mob"].lower(), {})).get("bossbar_layout"))
+        defaults = {sp["mob"]: entity_defaults(folder, {**sp, "mob_data": mobs[sp["mob"]]}, _drop_empty(mob_settings_raw.get(sp["mob"].lower(), {})).get("bossbar_layout"))
                     for sp in specs}
         out = with_template(raw_settings, defaults, main["mob"])
         out["pack"] = {**(out.get("pack") or {}), **j["pack"]}

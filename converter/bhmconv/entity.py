@@ -12,6 +12,7 @@ The owner's own components/groups/events are kept. Only the framework's
 from __future__ import annotations
 
 import copy
+import re
 from typing import Any
 
 STUB_FORMAT = "1.21.0"
@@ -235,24 +236,80 @@ def build_render_controller(boss: str, tint: bool, parts: list[str]) -> dict:
     return {"format_version": "1.8.0", "render_controllers": {render_controller_id(boss): rc}}
 
 
+DEFAULT_RC = "controller.render.default"
+DEFAULT_TEXTURE_FPS = 10
+
+
+def texture_frames(client: dict) -> list[str]:
+    """Animated texture frames: the client entity has no `default` texture but several named
+    <base>1, <base>2, … (one image per frame). Returns the texture keys in frame order."""
+    textures = client["minecraft:client_entity"]["description"].get("textures") or {}
+    if "default" in textures or len(textures) < 2:
+        return []
+    parsed = [re.fullmatch(r"(.*?)_?(\d+)", k) for k in textures]
+    if not all(parsed) or len({m.group(1) for m in parsed}) != 1:
+        return []
+    return [m.group(0) for m in sorted(parsed, key=lambda m: int(m.group(2)))]
+
+
+def plan_render_controller(client: dict, boss: str, notes: list[str], tint: bool, parts: list[str],
+                           custom: dict[str, dict], fps: float | None = None) -> dict | None:
+    """The render controller the entity needs, or None to keep its own. Built from the default
+    controller or the pack's own one (custom: id → definition from the mob folder), adding:
+    animated texture frames (only with the default controller), the bhm:tint overlay (L37) and
+    bhm:hidden_parts part visibility. Points the client entity at it."""
+    desc = client["minecraft:client_entity"]["description"]
+    rcs = desc.get("render_controllers") or [DEFAULT_RC]
+    frames = texture_frames(client) if rcs == [DEFAULT_RC] else []
+    if not (tint or parts or frames):
+        return None
+    if rcs == [DEFAULT_RC]:
+        rc: dict = {"geometry": "Geometry.default", "materials": [{"*": "Material.default"}], "textures": ["Texture.default"]}
+        base = "default"
+    elif len(rcs) == 1 and isinstance(rcs[0], str) and rcs[0] in custom:
+        rc = copy.deepcopy(custom[rcs[0]])
+        base = rcs[0]
+    else:
+        notes.append(f"client entity: render controllers {rcs} are custom and not in the mob folder; add overlay_color / "
+                     f"part_visibility from {render_controller_id(boss)} to them by hand (or put their file in the folder)")
+        return None
+    added = []
+    if frames:
+        rate = fps or DEFAULT_TEXTURE_FPS
+        rc.setdefault("arrays", {}).setdefault("textures", {})["Array.bhm_frames"] = [f"Texture.{k}" for k in frames]
+        rc["textures"] = [f"Array.bhm_frames[math.mod(math.floor(q.life_time * {rate:g}), {len(frames)})]"]
+        added.append(f"animated texture ({len(frames)} frames at {rate:g} fps)")
+    if tint:
+        if "overlay_color" in rc:
+            notes.append(f"render controller {base}: has its own overlay_color; the tint mechanic is not shown")
+        else:
+            prop = "q.property('bhm:tint')"
+            rc["overlay_color"] = {
+                "r": f"math.floor({prop} / 65536) / 255",
+                "g": f"math.mod(math.floor({prop} / 256), 256) / 255",
+                "b": f"math.mod({prop}, 256) / 255",
+                "a": f"{prop} == 16777215 ? 0.0 : 0.6",
+            }
+            added.append("tint overlay")
+    if parts:
+        mask = "q.property('bhm:hidden_parts')"
+        rc["part_visibility"] = (rc.get("part_visibility") or [{"*": True}]) + [
+            {bone: f"math.mod(math.floor({mask} / {2 ** i}), 2) < 1"} for i, bone in enumerate(parts)]
+        added.append("part visibility")
+    desc["render_controllers"] = [render_controller_id(boss)]
+    notes.append(f"client entity: render controller → {render_controller_id(boss)} (from {base}: {', '.join(added)})")
+    return {"format_version": "1.8.0", "render_controllers": {render_controller_id(boss): rc}}
+
+
 def patch_client_entity(client: dict, boss: str, notes: list[str], identifier: str | None = None, tint: bool = False,
                         parts: list[str] | None = None, always: list[str] | None = None,
                         sound_effects: dict[str, str] | None = None) -> dict:
-    """Base-layer controller first in scripts.animate, plus: identifier override, the generated
-    render controller (tint / hideable parts), always-on layer animations and sound effects."""
+    """Base-layer controller first in scripts.animate, plus: identifier override, always-on layer
+    animations and sound effects. (The render controller is planned by plan_render_controller.)"""
     out = copy.deepcopy(client)
     desc = out["minecraft:client_entity"]["description"]
     if identifier:
         desc["identifier"] = identifier
-    if tint or parts:
-        rcs = desc.get("render_controllers", [])
-        if rcs == ["controller.render.default"]:
-            desc["render_controllers"] = [render_controller_id(boss)]
-            what = " + ".join(x for x in ("tint overlay" if tint else "", "part visibility" if parts else "") if x)
-            notes.append(f"client entity: render controller → {render_controller_id(boss)} ({what})")
-        else:
-            notes.append(f"client entity: render controllers {rcs} are custom; add overlay_color / part_visibility from "
-                         f"{render_controller_id(boss)} to them by hand")
     desc.setdefault("animations", {})["bhm_base"] = base_controller_id(boss)
     scripts = desc.setdefault("scripts", {})
     animate = scripts.setdefault("animate", [])
@@ -295,6 +352,27 @@ def geometry_size(geo: dict) -> tuple[float, float]:
     return round(min(MAX_COLLISION_WIDTH, max(0.6, width)), 1), round(min(6.0, max(0.5, height)), 1)
 
 
+# MythicMobs Marker armor stands / Collidable: false (telegraphs, ground effects): nothing to bump into.
+MARKER_BOX = (0.2, 0.2)
+
+
+def collision_size(mob: dict, geo: dict, kind: str = "boss") -> tuple[float, float]:
+    """The collision box the converter gives a mob without one: tiny for markers / non-collidable
+    effect mobs, else from the model size (geometry_size)."""
+    if kind != "boss" and is_marker(mob):
+        return MARKER_BOX
+    return geometry_size(geo)
+
+
+def is_marker(mob: dict) -> bool:
+    """A MythicMobs marker effect (armor stand with Marker, or a non-collidable NoAI/armor-stand
+    effect). Only minions get the marker box: a boss must stay hittable (Steel Raider is a NoAI,
+    non-collidable boss)."""
+    opts = mob.get("Options") or {}
+    effect = str(mob.get("Type", "")).upper() == "ARMOR_STAND" or opts.get("NoAI") is True
+    return opts.get("Marker") is True or (opts.get("Collidable") is False and effect)
+
+
 def complete_behavior(behavior: dict, mob: dict, size: tuple[float, float], notes: list[str]) -> dict:
     """Add what a bare Blockbench behavior file lacks, from the MythicMobs mob: health, collision box,
     movement and pathfinding, follow range, knockback resistance, immunities (DamageModifiers 0).
@@ -310,7 +388,9 @@ def complete_behavior(behavior: dict, mob: dict, size: tuple[float, float], note
 
     hp = float(mob.get("Health", 20) or 20)
     add("minecraft:health", {"value": hp, "max": hp}, "MythicMobs Health")
-    add("minecraft:collision_box", {"width": size[0], "height": size[1]}, "from the model size")
+    marker = is_marker(mob) and tuple(size) == MARKER_BOX
+    add("minecraft:collision_box", {"width": size[0], "height": size[1]},
+        "MythicMobs Marker / Collidable false: nothing to bump into" if marker else "from the model size")
     speed = float(opts.get("MovementSpeed", 0) or 0)
     add("minecraft:movement", {"value": speed if speed > 0 else 0.25}, "MythicMobs MovementSpeed" if speed > 0 else "default 0.25")
     add("minecraft:movement.basic", {}, "walking")

@@ -14,7 +14,8 @@
 //   "<caster.name>", "<caster.phase>", "<caster.l.x>", "<target.name>",
 //   "<trigger.hp>", "<skill.var.n>", "<global.var.n>",
 //   "<random.float.0.9to1.2>", "<random.int.1to5>", "<random.1to5>".
-// Unknown placeholders are left as they are.
+// Unknown placeholders are left as they are. A variable that was never set reads as 0, like in
+// MythicMobs math (a pack can read <caster.var.x> before any skill sets it).
 import { Adapter } from "../adapter/Adapter.js";
 import { Random } from "./Random.js";
 import { Log } from "./Logger.js";
@@ -189,7 +190,7 @@ export class Variables {
     if (head === "random") return randomPlaceholder(parts.slice(1));
     if (head === "skill" || head === "global") {
       if (parts[1]?.toLowerCase() !== "var") return undefined;
-      return this.store(ctx, head)?.[parts.slice(2).join(".")];
+      return this.store(ctx, head)?.[parts.slice(2).join(".")] ?? 0;
     }
     /** @type {Target | undefined} */
     let who;
@@ -199,7 +200,7 @@ export class Variables {
     else return undefined;
     if (!who) return undefined;
     const field = parts[1]?.toLowerCase();
-    if (field === "var") return this.storeOf(who)?.[parts.slice(2).join(".")] ?? (head === "caster" ? ctx.boss.vars[parts.slice(2).join(".")] : undefined);
+    if (field === "var") return this.storeOf(who)?.[parts.slice(2).join(".")] ?? (head === "caster" ? ctx.boss.vars[parts.slice(2).join(".")] : undefined) ?? 0;
     if (field === "l" || field === "location") {
       const l = Adapter.locOf(who);
       const axis = parts[2]?.toLowerCase();

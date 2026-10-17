@@ -293,6 +293,7 @@ export class BossManager {
       boss.setSpeed(boss.speedMult);
       boss.applyDisplay();
       boss.applyParts();
+      boss.replayLayers();
       Log.debug(`resumed ${entity.typeId} (${entity.id}) in phase ${boss.phase}`);
       this.services.bus.emit("load", { boss });
       return boss;
@@ -379,6 +380,7 @@ export class BossManager {
       // Custom-death bosses stay in the world while their death animation plays:
       // stop AI and movement, and make sure a reload never re-arms them.
       Persistence.markDead(boss.entity);
+      boss.stopLayers();
       boss.facingLocked = true;
       boss.setSpeed(0);
       boss.setAiMode("frozen");

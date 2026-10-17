@@ -88,7 +88,7 @@ export class Entity {
   triggerEvent(ev) { note("event", `${this.typeId} ${ev}`); world.afterEvents.dataDrivenEntityTrigger.fire({ entity: this, eventId: ev }); }
   setProperty(k, v) { this.props[k] = v; }
   getProperty(k) { return this.props[k]; }
-  playAnimation(name, opts) { note("anim", `${name} (${opts?.controller ?? "-"})`); }
+  playAnimation(name, opts) { note("anim", `${name} (${opts?.controller ?? "-"})${opts?.stopExpression ? " stop" : ""}`); }
   getDynamicProperty(k) { return this.dyn[k]; }
   setDynamicProperty(k, v) { this.dyn[k] = v; }
   addTag(t) { this.tags.add(t); return true; }
