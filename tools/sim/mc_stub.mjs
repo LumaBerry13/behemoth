@@ -215,7 +215,14 @@ class Dimension {
     for (const b of impacted) if (!b.isAir) b.setType("minecraft:air");
     return true;
   }
-  getBlockBelow(loc) { return { location: { x: Math.floor(loc.x), y: 63, z: Math.floor(loc.z) } }; }
+  getBlockBelow(loc) {
+    // First non-air block strictly below loc (placed blocks first, then the flat ground at y < 64).
+    for (let y = Math.floor(loc.y) - 1; y > -64; y--) {
+      const b = this.getBlock({ x: loc.x, y, z: loc.z });
+      if (!b.isAir) return b;
+    }
+    return undefined;
+  }
 }
 
 const dims = { overworld: new Dimension("overworld"), nether: new Dimension("nether"), the_end: new Dimension("the_end") };

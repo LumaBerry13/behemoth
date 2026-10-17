@@ -54,7 +54,10 @@ export default {
         const ang = rng.next() * Math.PI * 2;
         const r = rng.next() * radius;
         const pos = { x: l.x + Math.cos(ang) * r, y: l.y, z: l.z + Math.sin(ang) * r };
-        if (o.onSurface) pos.y = a.surfaceY(dim, pos);
+        // onSurface drops it to the ground; a point inside the ground (picked at the caster's height
+        // on a slope) is lifted onto it, so effects never start buried.
+        if (o.onSurface) pos.y = a.surfaceY(dim, pos, 8);
+        else if (a.isSolidAt(dim, pos)) pos.y = a.surfaceY(dim, pos, 8);
         const e = a.spawnEntity(dim, o.type, pos);
         if (!e) continue;
         a.addTag(e, "bhm_summon");

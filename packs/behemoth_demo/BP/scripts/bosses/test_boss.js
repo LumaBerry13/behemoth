@@ -313,6 +313,8 @@ export default {
     demo_unset_var: { m: "variableMath", o: { var: "caster.unsetcalc", eq: "x + <caster.var.never_set> + 2" } },
     // MythicMobs "drop to the floor" (velocity y=-100): capped like Java, so nothing falls through the ground.
     demo_floor_drop: { m: "velocity", o: { y: -100, clear: true }, t: "@self" },
+    // A summon picked inside the ground (a slope) is lifted onto it.
+    demo_buried: { m: "summon", o: { type: "bhm_demo:marker", radius: 0 }, t: "@Location{x=40;y=64;z=40}" },
     // Only melee hits make it bleed (damageCause).
     bleed: {
       tr: "onDamaged",

@@ -14,6 +14,21 @@ const SAVE_INTERVAL_TICKS = 100;
 /** How long a dead boss keeps running its onDeath skills before teardown. */
 const DEATH_LINGER_TICKS = 100;
 
+/** Default per-hit damage cap for bosses (fraction of max health); minions are not capped. */
+export const DEFAULT_MAX_HIT_PERCENT = 0.1;
+/** Damage that always passes the cap (commands, the void, a boss ending itself). */
+const UNCAPPED_CAUSES = new Set(["override", "void", "selfDestruct"]);
+
+/**
+ * The per-hit cap of a config (0 = none).
+ * @param {import("../types/config").BossConfig} config
+ */
+export function maxHitPercent(config) {
+  const v = config.stats?.maxHitPercent;
+  if (typeof v === "number") return v > 0 && v < 1 ? v : 0;
+  return (config.kind ?? "boss") === "boss" ? DEFAULT_MAX_HIT_PERCENT : 0;
+}
+
 export class BossManager {
   /** @param {import("./services.js").Services} services */
   constructor(services) {
@@ -195,13 +210,19 @@ export class BossManager {
       const scale = boss.healthScale > 1 ? boss.healthScale : 1;
       // MythicMobs DamageModifiers on the boss itself.
       const mod = boss.config.damageModifiers?.[cause];
-      if (mod === undefined) return scale > 1 ? { damage: damage / scale } : undefined;
-      if (mod > 0) return { damage: (damage * mod) / scale };
-      if (mod < 0) {
-        const heal = (damage * -mod) / scale;
-        Adapter.run(() => Adapter.setHealth(hurt, Adapter.getHealth(hurt).current + heal));
+      if (mod !== undefined && mod <= 0) {
+        if (mod < 0) {
+          const heal = (damage * -mod) / scale;
+          Adapter.run(() => Adapter.setHealth(hurt, Adapter.getHealth(hurt).current + heal));
+        }
+        return { cancel: true };
       }
-      return { cancel: true };
+      let final = (damage * (mod ?? 1)) / scale;
+      // One hit never takes more than stats.maxHitPercent of max health (bosses: 10% by default), so a
+      // mace smash or a stacked crit cannot two-shot a boss. /kill, the void and self-destruction pass.
+      const cap = maxHitPercent(boss.config);
+      if (cap && !UNCAPPED_CAUSES.has(cause)) final = Math.min(final, Adapter.getHealth(hurt).max * cap);
+      return final === damage ? undefined : { damage: final };
     });
 
     ev.onEntityHurt((hurt, damager, damage, cause) => {

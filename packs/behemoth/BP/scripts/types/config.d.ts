@@ -114,6 +114,11 @@ export interface BossConfig {
   display?: { name?: string; bossBar?: boolean; barKey?: string };
   stats?: {
     health?: number;
+    /**
+     * Most damage one hit can deal, as a fraction of max health (bosses: 0.1 by default; 0 or 1 = no
+     * cap; minions: no cap unless set). Keeps mace smashes / stacked crits from two-shotting a boss.
+     */
+    maxHitPercent?: number;
     armor?: number;
     knockbackResist?: number;
     scale?: number;

@@ -77,7 +77,7 @@ console.log("\n2. death: body is removed even if the entity JSON never despawns 
   clearWorld();
   const player = new mc.Player("P", dim, { x: 0, y: 64, z: 3 });
   const { e, boss } = spawnBoss(0, 0);
-  e.applyDamage(500, { cause: "entityAttack", damagingEntity: player });
+  e.applyDamage(500, { cause: "override", damagingEntity: player }); // lethal: past the per-hit cap
   mc.tick(1);
   check("death registered", boss.dead === true);
   if (usesCustomDeath) check("entity still present during death animation", e.isValid);
@@ -93,7 +93,7 @@ console.log("\n3. reload during death: dying boss is not re-armed and goes away"
   clearWorld();
   const { e, boss } = spawnBoss(0, 0);
   if (usesCustomDeath) {
-    e.applyDamage(500, { cause: "entityAttack" });
+    e.applyDamage(500, { cause: "override" });
     mc.tick(1);
     // Simulate a script reload: forget the instance, then fire entityLoad.
     services.bosses.instances.delete(e.id);
@@ -433,10 +433,11 @@ console.log("\n18. minions: summoned, driven, hidden from the boss lists, remove
     const minions = services.bosses.all().filter((b) => b.config.id === "bhm_demo:minion");
     check("two minions summoned and driven by the framework", minions.length === 2);
     check("bound to their boss", boss.boundSummons.size === 2);
+    check("minions carry no name tag", minions.every((m) => !m.entity.nameTag));
     const list = services.bosses.worldList(dim, player.location);
     check("world boss list shows the boss but no minions", list.some((x) => x.id === boss.id) && !list.some((x) => x.type === "bhm_demo:minion"));
     check("nearest() never returns a minion", services.bosses.nearest(dim, minions[0].location, 1)?.config.kind !== "minion");
-    e.applyDamage(1000, { cause: "entityAttack", damagingEntity: player });
+    e.applyDamage(1000, { cause: "override", damagingEntity: player });
     mc.tick(2);
     check("minions removed when the boss dies", minions.every((m) => !m.entity.isValid));
     check("boss dropped from the world list", !services.bosses.known.has(boss.id));
@@ -677,7 +678,7 @@ console.log("\n29. D7: loot goes into a chest that explosions cannot destroy");
     // dropItem during the fight (e.g. a shield knocked off): kept, persisted, never on the ground.
     services.bosses.addLoot(d.boss, [{ item: "minecraft:shield", amount: 1 }], d.e.location);
     check("loot dropped mid-fight is kept with the boss (persisted)", JSON.parse(d.e.dyn["bhm:state"]).loot?.[0]?.item === "minecraft:shield");
-    d.e.applyDamage(1000, { cause: "entityAttack", damagingEntity: d.player });
+    d.e.applyDamage(1000, { cause: "override", damagingEntity: d.player });
     mc.tick(2);
     // dropItem during the death sequence: added to the same chest.
     services.bosses.addLoot(d.boss, [{ item: "minecraft:mace", amount: 1 }], d.e.location);
@@ -977,6 +978,26 @@ console.log("\n33. partVisibility, grab, damageCause, onAttack from a cancelled 
     d.run("demo_floor_drop", 1);
     const drop = mc.log.slice(s9).find(([, k, x]) => k === "impulse" && x.startsWith("bhm_demo:test_boss"));
     check("huge impulses are capped at 3.9 blocks/tick (no falling through the ground)", !!drop && drop[2].includes("-3.9"), drop?.[2]);
+
+    // Per-hit damage cap (bosses: 10% of max health): a mace smash cannot two-shot the boss.
+    const hp0 = d.e.health.currentValue;
+    const max = d.e.health.effectiveMax ?? d.e.health.defaultValue ?? hp0;
+    d.boss.healthScale = 1;
+    d.e.applyDamage(500, { cause: "entityAttack", damagingEntity: d.player });
+    mc.tick(1);
+    check("one hit takes at most 10% of the boss's max health", Math.abs(hp0 - d.e.health.currentValue - max * 0.1) < 0.01, `${hp0} → ${d.e.health.currentValue} (max ${max})`);
+    const hp1 = d.e.health.currentValue;
+    d.e.applyDamage(2, { cause: "entityAttack", damagingEntity: d.player });
+    mc.tick(1);
+    check("…small hits are unchanged", Math.abs(hp1 - d.e.health.currentValue - 2) < 0.01);
+
+    dim.blocks.set("40,64,40", "minecraft:stone");
+    dim.blocks.set("40,65,40", "minecraft:dirt");
+    s9 = mc.log.length;
+    d.run("demo_buried", 1);
+    const buried = mc.log.slice(s9).find(([, k, x]) => k === "spawn" && x.startsWith("bhm_demo:marker"));
+    check("a summon inside the ground is lifted onto it", !!buried && buried[2].includes(", 66"), buried?.[2]);
+    d.e.health.setCurrentValue?.(max);
   }
 }
 

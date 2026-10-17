@@ -229,7 +229,8 @@ export class BossInstance {
    * framework RP's HUD hides (the name is part of the image, L45).
    */
   applyDisplay() {
-    if (this.config.display?.barKey) Adapter.setNameTag(this.entity, "");
+    // Minions (candle warriors, telegraphs) carry no name tag; only bosses show a name.
+    if (this.config.display?.barKey || this.config.kind === "minion") Adapter.setNameTag(this.entity, "");
     else if (this.config.display?.name) this.setBarName(this.config.display.name);
   }
 
@@ -240,7 +241,7 @@ export class BossInstance {
    * @param {string} text
    */
   setBarName(text) {
-    if (!this.config.display?.barKey) Adapter.setNameTag(this.entity, text);
+    if (!this.config.display?.barKey && this.config.kind !== "minion") Adapter.setNameTag(this.entity, text);
   }
 
   /**

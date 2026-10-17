@@ -107,6 +107,9 @@ TUNING_TEMPLATE: dict[str, Any] = {
     "damage_multiplier": None, "ignore_difficulty": False, "stop_distance": None, "leash_range": None,
     "reset_after_no_players": None, "randomskill_mode": "", "trigger_overrides": {}, "option_overrides": {},
     "extra_lines": {}, "extra_lines_enabled": True,
+    # Fight difficulty on Bedrock: max_hit_percent = most of the boss's max health one hit can take
+    # (the framework's default for bosses is 10); health_multiplier raises the YAML's Health.
+    "max_hit_percent": 10, "health_multiplier": 1,
 }
 TEMPLATE: dict[str, Any] = {"pack": {}, "boss": "", "mobs": {}, "tuning": TUNING_TEMPLATE, "particles": {},
                             "items": {}, "sounds": {}, "mob_types": {}, "bullets": {}}

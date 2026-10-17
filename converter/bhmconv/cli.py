@@ -640,7 +640,8 @@ def build_entity(spec: dict, job: dict, src: Path, out: Path, mobs: dict, skills
     ctx.base_states["walk"].append("walk") if "walk" in action_anims else None
     tb = translate_boss(spec["mob"], mobs[spec["mob"]], skills, ctx)
     if spec.get("auto"):
-        _auto_skills(tb["skills"], action_anims, ctx, notes)
+        is_effect = kind == "minion" and (tb["noAI"] or bool(spec.get("effect")))
+        always += [a for a in _auto_skills(tb["skills"], action_anims, ctx, notes, is_effect) if a not in always]
     notes += ctx.notes
     tuning = spec.get("tuning", job.get("tuning", {}) if kind == "boss" else {})
     apply_tuning(tb["skills"], tuning, ctx, notes)
@@ -732,6 +733,16 @@ def build_entity(spec: dict, job: dict, src: Path, out: Path, mobs: dict, skills
     # the bar shows the plain name (the game strips colour codes) and gets an empty image.
     bar_key = BAR_KEY_PREFIX + re.sub(r"[^a-z0-9_]", "_", entity_id.lower()) if kind == "boss" and spec.get("bossbar") else ""
     bar_name = bar_key or _plain(tb["display"])
+    # Bedrock-side difficulty: more health, and a cap on what one hit can take (bosses: 10% by default).
+    hp_mult = float(tuning.get("health_multiplier") or 1)
+    if hp_mult != 1:
+        tb["health"] = round(tb["health"] * hp_mult, 1)
+        behavior["minecraft:entity"].setdefault("components", {})["minecraft:health"] = {"value": tb["health"], "max": tb["health"]}
+        notes.append(f"tuning: health ×{hp_mult:g} → {tb['health']:g}")
+    max_hit = tuning.get("max_hit_percent")
+    if max_hit is not None:
+        notes.append(f"tuning: one hit takes at most {float(max_hit):g}% of max health" if float(max_hit) > 0
+                     else "tuning: no per-hit damage cap")
     config = {
         "schemaVersion": 1,
         "id": entity_id,
@@ -741,7 +752,8 @@ def build_entity(spec: dict, job: dict, src: Path, out: Path, mobs: dict, skills
         "stats": {"health": tb["health"], "scale": 1,
                   **({"movementSpeed": movement_speed(behavior)} if movement_speed(behavior) else {}),
                   **({"damageMultiplier": tuning["damage_multiplier"]} if "damage_multiplier" in tuning else {}),
-                  **({"ignoreDifficulty": True} if tuning.get("ignore_difficulty") else {})},
+                  **({"ignoreDifficulty": True} if tuning.get("ignore_difficulty") else {}),
+                  **({"maxHitPercent": round(min(100.0, float(max_hit)) / 100, 4)} if max_hit is not None else {})},
         **({"invulnerable": True} if tb["invincible"] else {}),
         # NoAI minions and generated invisible ones are effect entities (telegraphs, cracks): own summon caps.
         **({"effect": True} if kind == "minion" and (tb["noAI"] or spec.get("effect")) else {}),
@@ -832,14 +844,24 @@ def _detect_always(mob: dict, yaml_text: str, action_anims: dict, all_anims: dic
     return found
 
 
-def _auto_skills(skills: dict, action_anims: dict, ctx: Context, notes: list[str]) -> None:
+def _auto_skills(skills: dict, action_anims: dict, ctx: Context, notes: list[str], effect: bool = False) -> list[str]:
     """What ModelEngine/MythicMobs do implicitly: play `spawn` on spawn and `death` on death, and keep
-    a propel that runs every few ticks flat (its default hop would otherwise lift the mob)."""
+    a propel that runs every few ticks flat (its default hop would otherwise lift the mob).
+    Returns animations the client plays by itself (an effect entity's `spawn`)."""
     played = {line.get("o", {}).get("anim") for sk in skills.values() for line in [sk] + list(sk.get("c", []))
               if line.get("m") == "state"}
+    client: list[str] = []
     for anim, trig in (("spawn", "onSpawn"), ("death", "onDeath")):
         if anim in action_anims and anim not in played:
-            skills[f"bhm_{anim}_animation"] = {"tr": trig, "m": "state", "o": {"anim": anim}}
+            if anim == "spawn" and effect:
+                # Short-lived effect entities: the client starts it the moment the entity appears (a
+                # server-side play in the spawn tick sometimes reached the client before the entity).
+                client.append(anim)
+                notes.append("plays `spawn` client side as soon as it appears (effect entity)")
+                continue
+            # Two ticks after spawning, so the client has the entity before the animation is sent.
+            skills[f"bhm_{anim}_animation"] = {"tr": trig, "m": "state", "o": {"anim": anim},
+                                               **({"delay": 2} if anim == "spawn" else {})}
             ctx.used_mechanics.add("state")
             notes.append(f"plays `{anim}` on {trig[2:].lower()} (ModelEngine does this automatically)")
     fast = set()
@@ -854,6 +876,7 @@ def _auto_skills(skills: dict, action_anims: dict, ctx: Context, notes: list[str
             if line.get("m") == "propel" and "height" not in line.get("o", {}):
                 line["o"]["height"] = 0
                 notes.append(f"{name}: propel runs every few ticks, kept flat (height 0)")
+    return client
 
 
 def apply_tuning(skills: dict, tuning: dict, ctx: Context, notes: list[str]) -> None:

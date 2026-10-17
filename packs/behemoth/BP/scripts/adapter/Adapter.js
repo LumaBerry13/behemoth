@@ -438,11 +438,15 @@ export const Adapter = {
 
   /**
    * Y of the first walkable surface at or below `loc` (for on-surface summons).
-   * @param {Dimension} dim @param {Vector3} loc
+   * @param {Dimension} dim @param {Vector3} loc @param {number} [maxUp] blocks to climb out of the ground
    */
-  surfaceY(dim, loc) {
+  surfaceY(dim, loc, maxUp = 1) {
     try {
-      const block = dim.getBlockBelow({ x: loc.x, y: loc.y + 1, z: loc.z });
+      // A point inside the ground (a hill higher than where it was picked) climbs up to maxUp
+      // blocks to the air above before dropping to the first block below.
+      const probe = { x: loc.x, y: loc.y + 1, z: loc.z };
+      for (let i = 1; i < maxUp && this.isSolidAt(dim, probe); i++) probe.y += 1;
+      const block = dim.getBlockBelow(probe);
       return block ? block.location.y + 1 : loc.y;
     } catch {
       return loc.y;

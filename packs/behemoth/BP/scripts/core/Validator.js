@@ -68,6 +68,8 @@ export class Validator {
       if (!config.skills || typeof config.skills !== "object") fatal.push("skills object is required");
       if (config.ai?.default && !VALID_AI.includes(config.ai.default)) fatal.push(`ai.default must be one of ${VALID_AI.join("/")}`);
       if (config.kind !== undefined && config.kind !== "boss" && config.kind !== "minion") fatal.push(`kind must be "boss" or "minion"`);
+      const mhp = config.stats?.maxHitPercent;
+      if (mhp !== undefined && (typeof mhp !== "number" || mhp < 0 || mhp > 1)) fatal.push("stats.maxHitPercent must be a number 0–1 (0 = no cap)");
       const barKey = config.display?.barKey;
       if (barKey !== undefined && !(typeof barKey === "string" && /^bhmbar_[a-z0-9_]+$/.test(barKey))) fatal.push(`display.barKey must look like "bhmbar_<id>" (lowercase letters, digits, _)`);
       if (config.variables !== undefined && (typeof config.variables !== "object" || Array.isArray(config.variables))) fatal.push("variables must be an object of name → initial value");

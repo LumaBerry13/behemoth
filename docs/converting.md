@@ -208,6 +208,8 @@ the conversion with a message instead of being ignored. An example with values:
     }
   },
   "tuning": {
+    "health_multiplier": 2,
+    "max_hit_percent": 10,
     "damage_multiplier": 2.0,
     "ignore_difficulty": true,
     "stop_distance": 2.5,
@@ -234,6 +236,9 @@ the conversion with a message instead of being ignored. An example with values:
 - `bone_aliases`: a ModelEngine part name the YAML uses → the Bedrock bone that stands for it.
 - `items`: MythicMobs custom items (`dropitem{i=...}` and the mob's `Drops`) → a Bedrock item id. Vanilla names (`DIAMOND`) work
   without it.
+- `health_multiplier` raises the boss's health above the YAML's `Health`; `max_hit_percent` is the most
+  of its max health one hit can take (default 10, so even a mace smash needs 10+ hits; 0 = no cap).
+  Minions are not capped. `/kill` and the void always go through.
 - `tuning` changes how the boss plays on Bedrock without touching the YAML. Every change is listed in
   the report.
 

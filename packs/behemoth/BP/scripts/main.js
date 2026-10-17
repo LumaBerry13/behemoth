@@ -18,7 +18,7 @@ import { SkillManager, bindModules } from "./registry/SkillManager.js";
 import { startDebugOverlay } from "./debug/overlay.js";
 import { Menu } from "./ui/Menu.js";
 
-export const VERSION = "0.8.0";
+export const VERSION = "0.9.0";
 
 services.adapter = Adapter;
 services.log = Log;

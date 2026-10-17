@@ -238,3 +238,31 @@ def test_death_animation_gets_a_scripted_death(tmp_path):
     assert "bhm:start_death" in ent["events"]
     cfg = (f / "pack" / "BP" / "scripts" / "bosses" / "kitchen_boss.js").read_text(encoding="utf-8")
     assert 'death: { event: "bhm:start_death"' in cfg
+
+
+def test_spawn_animation_client_side_for_effects_and_delayed_for_others():
+    from bhmconv.cli import _auto_skills
+    from bhmconv.mythic import Context
+    c = Context(anims={"spawn"}, bones=set(), mob_types={}, sounds={}, bone_aliases={})
+    skills: dict = {}
+    assert _auto_skills(skills, {"spawn": "animation.x.spawn"}, c, [], effect=True) == ["spawn"]
+    assert not skills                                                  # the client plays it, not a skill
+    skills = {}
+    assert _auto_skills(skills, {"spawn": "animation.x.spawn"}, c, [], effect=False) == []
+    assert skills["bhm_spawn_animation"]["delay"] == 2                 # the client has the entity by then
+
+
+def test_fight_tuning_health_and_hit_cap(tmp_path):
+    f = make_folder(tmp_path)
+    settings = json.loads((f / "behemoth.json").read_text())
+    settings["tuning"] = {"health_multiplier": 3, "max_hit_percent": 5}
+    (f / "behemoth.json").write_text(json.dumps(settings))
+    assert main([str(f)]) == 0
+    cfg = (f / "pack" / "BP" / "scripts" / "bosses" / "kitchen_boss.js").read_text(encoding="utf-8")
+    assert "health: 450" in cfg and "maxHitPercent: 0.05" in cfg
+    ent = json.loads((f / "pack" / "BP" / "entities" / "kitchen_boss.json").read_text(encoding="utf-8"))
+    assert ent["minecraft:entity"]["components"]["minecraft:health"]["max"] == 450
+    spark = (f / "pack" / "BP" / "scripts" / "bosses" / "kitchen_spark.js").read_text(encoding="utf-8")
+    assert "maxHitPercent" not in spark                                # minions are not capped
+    data = json.loads((f / "behemoth.json").read_text())
+    assert data["tuning"]["max_hit_percent"] == 5 and data["tuning"]["health_multiplier"] == 3

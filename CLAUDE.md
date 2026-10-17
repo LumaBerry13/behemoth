@@ -138,6 +138,8 @@ Archivist-structure support (2026-10-17, framework 0.8.0): `state{layer}` (own c
 
 Impulse cap (2026-10-17): `Adapter.push` clamps each axis to `MAX_IMPULSE` 3.9 blocks/tick like Java; MythicMobs `velocity{y=-100}` (drop to floor) otherwise sent 0.2-box effect entities through the ground.
 
+Fight feel (2026-10-17, framework 0.9.0): per-hit damage cap `stats.maxHitPercent` (bosses default `DEFAULT_MAX_HIT_PERCENT` 0.1, minions none; `override`/`void`/`selfDestruct` uncapped) in the boss hurt before-event; converter tuning `max_hit_percent` (percent) + `health_multiplier`. Minions never carry a name tag. Summons whose spawn point is inside solid ground are lifted onto it (`Adapter.surfaceY(dim, loc, maxUp)` climbs out of the ground); effect minions play `spawn` client side (scripts.animate), other mobs' auto `spawn` is delayed 2 ticks (a spawn-tick playAnimation could reach the client before the entity). Scenario kills use cause `override` (uncapped).
+
 Other runtime features: D6 Peaceful removal, D7 health scaling (incoming damage ÷ `boss.healthScale`, L38) and loot chests (`core/LootChests.js`, explosion before-event, `bhm:lootchests`), stun (`BossInstance.stun`), summon parent link (`bhm:parent` dynamic property → `@Parent`), `damageModifiers`, `death.event` + `removeAfter` backstop, `baseStates` (`bhm:idle_state`/`bhm:walk_state`), `restPose`, facing lock, persisted speed multiplier, timed summons, reset/leash (`onReset`), script-level invulnerability, no boss-vs-boss damage (`ai.friendlyFire` opt-in), `tempBlocks` (air only, mobGriefing, restored across reloads), compact baked tracks (`TrackCodec`: `{q, n, d: base64 int16}`).
 
 MythicMobs → Behemoth translation rules (converter `mythic.py`):
